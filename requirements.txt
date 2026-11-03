@@ -1,0 +1,5 @@
+# Minimal simulation: pip install -e .
+# Optional integrations (install only what your environment supports):
+# pip install -e ".[vision,medication,speech,kiosk,api,dev]"
+# ROS 2 rclpy / Nav2 must be installed via your ROS distribution, not pip.
+-e .

@@ -1,55 +1,88 @@
-# AI Companion Robot
+# 노인 생활보조 AI 로봇 (Eldercare AI Robot)
 
-AI 컴패니언 로봇의 단계별 기능을 구현한 Python 기반 프로토타입 프로젝트입니다.
+아파트·주거 공간에서 고령자의 생활을 보조하는 **소형 실내 로봇 소프트웨어 프로젝트**입니다. UML 설계의 주요 기능을 Python 모듈로 나눈 **실행 가능한 시뮬레이션 프로토타입**입니다.
 
-## 1. 프로젝트 목표
+> ⚠️ **안전 고지:** 현재 코드는 학습·시연용입니다. 실제 낙상 진단, 응급 신고, 복약 처방, 모터 구동 또는 자율주행을 수행하지 않습니다. 사람의 안전이 관련된 실제 환경에 그대로 배포하지 마세요.
 
-본 프로젝트는 AI 컴패니언 로봇을 기반으로 사용자 및 가족의 일상생활을 지원하는 통합 플랫폼 개발을 목표로 합니다.
+## 주요 기능 및 구현 상태
 
-현재는 AI 대화, 복약 알림, 실내 이동 보조, 위험 상황 감지 등의 기본 기능을 프로토타입으로 구현한 단계입니다.
+| 기능 | 구현된 시뮬레이션 | 실제 제품화를 위한 추가 작업 |
+|---|---|---|
+| 낙상 감지 | 자세·급격한 움직임·무동작 시간 기반 의심 판별 | 카메라/IMU 연동, AI 모델 검증, 사용자 응답 확인 |
+| 복약 관리 | 일정 시각 알림 및 중복 방지 | 스케줄러, 영속 저장, 보호자 설정, 복약 확인 |
+| 실내 이동 보조 | 장애물 거리 기반 이동 허용·비상 정지 상태 | ROS 2/Nav2, 센서 융합, 모터·안전 회로 |
+| 편의시설 안내 | 승강기·인터폰 안내 문구 | 음성 입출력, 기기별 UI/접근성 검증 |
+| 키오스크 안내 | 주문 단계별 안내 문구 | OCR, 화면 인식, 음성 안내, 실제 화면별 시나리오 |
+| 보호자 알림 | 로컬 이벤트 기록 | 인증된 서버/API, 동의 및 보안 정책 |
 
-향후 사용자 데이터를 기반으로 가족 기억 관리, 스마트홈 제어, 건강 모니터링 등의 기능을 확장할 예정입니다.
+## 빠른 시작
 
-## 2. 파일 설명
+Python 3.10 이상을 준비합니다.
 
-### companion_robot.py
-AI 컴패니언 로봇의 기능을 구현한 **실제 실행 코드**입니다.
+```bash
+python -m venv .venv
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+# macOS / Linux: source .venv/bin/activate
+python -m pip install -e ".[dev]"
+eldercare-demo
+python -m pytest
+```
 
-프로그램 실행 시 `demo_data` 폴더와 `companion_state.json` 파일이 생성됩니다.
+선택적 기능 패키지 설치:
 
-**companion_state.json 파일 설명**
-- 사용자 프로필(사용자 ID, 이름, 선호사항) 저장
-- 사용자와 AI 로봇 간의 대화 기록 저장
-- 등록된 복약 일정 및 알림 기록 저장
-- 로봇의 배터리 잔량 및 현재 상태 저장
+```bash
+python -m pip install -e ".[vision,medication,speech,kiosk,api,dev]"
+```
 
-해당 파일은 프로그램 실행 중 발생하는 데이터를 로컬 환경에 저장하는 역할을 합니다.
+`rclpy` 및 Nav2는 ROS 2 배포판에 맞춰 별도 설치해야 하며, `pytesseract`는 시스템 Tesseract 엔진도 필요합니다. 선택 패키지는 현재 시뮬레이션 실행에 필요하지 않습니다.
 
-따라서 프로그램을 종료한 후 다시 실행하더라도 이전에 저장된 정보를 불러올 수 있습니다.
+## 프로젝트 구조
 
-단, 현재는 로그인 및 사용자 인증 기능이 구현되지 않았으며, 사용자별 계정을 관리하는 데이터베이스가 아닌 **프로토타입용 로컬 JSON 저장 방식**입니다.
+```text
+eldercare-ai-robot/
+├── src/eldercare_robot/
+│   ├── main.py             # 시연 실행
+│   ├── controller.py       # 통합 안전 이벤트 처리
+│   ├── fall_detection.py   # 낙상 의심 판별
+│   ├── medication.py       # 복약 일정
+│   ├── mobility.py         # 이동 안전 게이트
+│   ├── guidance.py         # 시설·키오스크 안내
+│   └── notifications.py    # 보호자 알림 기록
+├── tests/test_robot.py
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── DEVELOPMENT_PLAN.md
+├── .github/workflows/ci.yml
+├── .env.example
+├── .gitignore
+├── requirements.txt
+└── pyproject.toml
+```
 
-### test_companion_robot.py
-위 프로그램의 기능이 정상적으로 작동하는지 확인하기 위한 **테스트용 코드**입니다.
+## 개발 로드맵
 
-**테스트 항목 예시**
-- 복약 일정이 정상적으로 등록되는가?
-- 등록한 일정이 정확하게 저장되는가?
-- 설정한 조건에 맞는 알림이 생성되는가?
+1. **프로토타입:** 시뮬레이션과 단위 테스트 (현재 저장소)
+2. **알파:** ROS 2/센서 연동, 모듈 통합, 안전 정지 검증
+3. **베타:** 동의 기반 주거 환경 시험, 오탐 분석, 접근성 개선
+4. **릴리즈:** 보안·안전 검증, 배포, 업데이트·롤백
+5. **운영:** 모니터링, 오류 수정, 회귀 테스트
 
-## 3. 향후 개발 방향
+단계별 제안 일정과 검증 항목은 [개발 계획](docs/DEVELOPMENT_PLAN.md), 구성 요소는 [아키텍처](docs/ARCHITECTURE.md)를 참고하세요.
 
-### Family Memory Archive
-- 개인 및 가족의 추억과 정보를 저장하고 관리
-- AI가 저장된 기억을 검색하고 대화에 활용할 수 있도록 확장
+## GitHub 업로드
 
-### Smart Home Control
-- 아파트 내 스마트홈 기기와 연동
-- 가스불 등 주요 가정용 기기의 상태 확인 및 제어 기능 구현
+```bash
+git init
+git add .
+git commit -m "Initial simulated eldercare robot prototype"
+git branch -M main
+git remote add origin https://github.com/USERNAME/REPOSITORY.git
+git push -u origin main
+```
 
-### Health Monitoring
-- 웨어러블 기기와 연동하여 개인 건강 데이터 수집
-- 건강 상태 모니터링 및 이상 징후 알림 기능 개발
+GitHub에서 빈 저장소를 먼저 만들고 `USERNAME/REPOSITORY`를 실제 값으로 변경하세요. `.env`에 넣은 토큰·개인정보·영상 기록은 업로드하지 마세요.
 
+## 라이선스
 
-현재는 초기 프로토타입 단계이며, 각 기능은 향후 개발 과정에서 단계적으로 추가 및 개선할 예정입니다.
+MIT — [LICENSE](LICENSE) 참고.

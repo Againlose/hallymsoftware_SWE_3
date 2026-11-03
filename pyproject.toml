@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "eldercare-ai-robot"
+version = "0.1.0"
+description = "Safety-first simulated indoor eldercare robot software prototype"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Project Contributors"}]
+dependencies = []
+[project.optional-dependencies]
+vision = ["numpy>=1.26", "opencv-python>=4.8", "mediapipe>=0.10"]
+medication = ["APScheduler>=3.10,<4"]
+speech = ["pyttsx3>=2.90", "SpeechRecognition>=3.10"]
+kiosk = ["Pillow>=10", "pytesseract>=0.3.10", "opencv-python>=4.8"]
+api = ["requests>=2.31", "python-dotenv>=1.0"]
+dev = ["pytest>=8", "ruff>=0.6"]
+[project.scripts]
+eldercare-demo = "eldercare_robot.main:main"
+[tool.setuptools.packages.find]
+where = ["src"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
