@@ -20,6 +20,15 @@ import re
 import threading
 from typing import Any
 
+from smart_home import (
+    CommandResult,
+    SmartHomeController,
+    SmartHomeError,
+    ValveState,
+    build_smart_home_tab,
+    create_default_controller,
+)
+
 
 @dataclass
 class UserProfile:
@@ -134,6 +143,8 @@ class IntentClassifier:
         "status": ["로봇 상태 확인", "배터리 잔량 알려줘", "배터리 몇 퍼센트", "현재 상태 확인", "상태 어때"],
         "charge": ["충전해줘", "배터리 충전", "로봇 충전 시작", "충전이 필요해"],
         "emergency": ["넘어졌어 도와줘", "쓰러졌어", "위험한 상황이야", "긴급 도움 요청", "낙상 발생 도움"],
+        "smart_home_status": ["가스불 확인해줘", "가스밸브 상태 알려줘", "가스 켜져 있어", "주방 가스 잠겼는지 확인", "가스 상태 조회"],
+        "smart_home_shutoff": ["가스불 꺼줘", "가스밸브 잠가줘", "가스 차단해줘", "주방 가스 불 꺼줘", "가스 잠금 실행"],
     }
 
     def __init__(self):
@@ -246,7 +257,7 @@ class MedicationManager:
 
 
 class Robot:
-    def __init__(self, store: JsonStore):
+    def __init__(self, store: JsonStore, smart_home: SmartHomeController | None = None):
         self.store = store
         saved = store.load()
         profile_saved = saved.get("profile", {})
@@ -266,12 +277,16 @@ class Robot:
         self.ai_model = IntentClassifier()
         self.voice_processor = VoiceProcessor()
         self.last_reply = ""
+        self.smart_home = smart_home if smart_home is not None else create_default_controller()
+        if isinstance(saved.get("smart_home"), dict):
+            self.smart_home.load_from_dict(saved["smart_home"])
 
     def save(self) -> None:
         self.store.save({"profile": asdict(self.profile), "battery": self.battery,
                          "status": self.status, "history": [asdict(x) for x in self.history[-200:]],
                          "medications": self.medications.entries,
-                         "alerts": self.alerts.records[-100:]})
+                         "alerts": self.alerts.records[-100:],
+                         "smart_home": self.smart_home.to_dict()})
 
     def start_conversation(self, utterance: str) -> tuple[str, str, float]:
         text = self.voice_processor.recognize(utterance)
@@ -307,7 +322,11 @@ class Robot:
         if intent == "emergency":
             self.trigger_fall()
             return "위험 상황을 감지한 것으로 시뮬레이션했습니다. 화면에 긴급 알림 기록을 남겼습니다. 실제 구조 요청은 전송되지 않았습니다."
-        return "요청을 정확히 분류하지 못했습니다. '약 복용', '화장실 이동', '키오스크', '상태 확인'처럼 말씀해 주세요."
+        if intent == "smart_home_status":
+            return self.get_gas_status_summary()
+        if intent == "smart_home_shutoff":
+            return self.shut_off_gas().message
+        return "요청을 정확히 분류하지 못했습니다. '약 복용', '화장실 이동', '키오스크', '상태 확인', '가스불 꺼줘'처럼 말씀해 주세요."
 
     def trigger_fall(self) -> None:
         self.fall.fallen = True
@@ -335,6 +354,34 @@ class Robot:
         if due:
             self.save()
         return due
+
+    def get_gas_status_summary(self, device_id: str = SmartHomeController.DEFAULT_GAS_VALVE_ID) -> str:
+        try:
+            st = self.smart_home.get_device_status(device_id)
+        except SmartHomeError as exc:
+            msg = f"가스밸브 상태를 확인할 수 없습니다: {exc}"
+            self.alerts.create("스마트홈/가스", msg)
+            self.save()
+            return msg
+        if st.state == ValveState.CLOSED:
+            return f"{st.name}는 현재 잠겨 있습니다. (시뮬레이션)"
+        if st.state == ValveState.OPEN:
+            return f"{st.name}가 열려 있습니다(경과 {st.opened_minutes}분). 필요 시 '가스불 꺼줘'라고 말씀해 주세요. (시뮬레이션)"
+        return f"{st.name} 현재 상태: {st.state.value} (시뮬레이션)"
+
+    def shut_off_gas(self, device_id: str = SmartHomeController.DEFAULT_GAS_VALVE_ID) -> CommandResult:
+        result = self.smart_home.request_gas_shutoff(device_id)
+        category = "스마트홈/가스" if result.success else "스마트홈/가스 오류"
+        self.alerts.create(category, result.message)
+        self.save()
+        return result
+
+    def check_gas_safety(self, device_id: str = SmartHomeController.DEFAULT_GAS_VALVE_ID) -> tuple[bool, str]:
+        is_safe, msg = self.smart_home.check_gas_safety(device_id)
+        if not is_safe:
+            self.alerts.create("스마트홈/가스 경고", msg)
+            self.save()
+        return is_safe, msg
 
 
 def run_gui() -> None:
@@ -378,11 +425,12 @@ def run_gui() -> None:
 
     tabs = ttk.Notebook(root)
     tabs.pack(fill="both", expand=True, padx=26, pady=(0, 20))
-    tab1, tab2, tab3, tab4 = (ttk.Frame(tabs, style="Panel.TFrame") for _ in range(4))
+    tab1, tab2, tab3, tab4, tab5 = (ttk.Frame(tabs, style="Panel.TFrame") for _ in range(5))
     tabs.add(tab1, text="1단계 · 대화/프로필")
     tabs.add(tab2, text="2단계 · 복약/키오스크")
     tabs.add(tab3, text="3단계 · 실내 이동")
     tabs.add(tab4, text="4단계 · 안전/통합")
+    tabs.add(tab5, text="5단계 · 스마트홈")
 
     def label(parent, text, heading=False):
         return ttk.Label(parent, text=text, style="Heading.TLabel" if heading else "TLabel")
@@ -449,7 +497,7 @@ def run_gui() -> None:
 
     ttk.Button(right1, text="프로필 저장", command=save_profile).pack(anchor="w", pady=(14, 22))
     label(right1, "사용 예시", True).pack(anchor="w", pady=(0, 9))
-    label(right1, "• 안녕\n• 약 복용 알려줘\n• 화장실로 이동\n• 키오스크 사용법\n• 배터리 상태 확인\n• 넘어졌어 도와줘").pack(anchor="w")
+    label(right1, "• 안녕\n• 약 복용 알려줘\n• 화장실로 이동\n• 키오스크 사용법\n• 배터리 상태 확인\n• 넘어졌어 도와줘\n• 가스불 확인해줘\n• 가스불 꺼줘").pack(anchor="w")
 
     # -------- 2단계 --------
     inner2 = ttk.Frame(tab2, style="Panel.TFrame")
@@ -600,6 +648,9 @@ def run_gui() -> None:
         alert_view.configure(state="disabled")
 
     label(inner4, "주의: 실제 낙상 감지 장치, 위치 정보, 구조기관 전송, 응급 대응 기능이 아닙니다.").pack(anchor="w", pady=(12, 0))
+
+    # -------- 5단계 (독립 모듈 연결) --------
+    build_smart_home_tab(tab5, robot, on_state_change=lambda: (update_status(), refresh_alerts()))
 
     def scheduled_check():
         robot.check_medication()
