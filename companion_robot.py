@@ -17,6 +17,7 @@ import json
 import math
 from pathlib import Path
 import re
+import sqlite3
 import threading
 from typing import Any
 
@@ -268,11 +269,21 @@ class Robot:
         profile_saved = saved.get("profile", {})
         self.profile = UserProfile(**{k: profile_saved.get(k, getattr(UserProfile(), k))
                                       for k in UserProfile.__dataclass_fields__})
-        self.memory_archive = (
-            memory_archive if memory_archive is not None
-            else MemoryArchive(store.data_dir / "memory_archive.sqlite3")
-        )
-        self.memory_archive.register_user(self.profile.user_id, self.profile.name)
+        self.memory_archive: MemoryArchive | None = None
+        self.memory_archive_error: str | None = None
+        try:
+            archive = (
+                memory_archive if memory_archive is not None
+                else MemoryArchive(store.data_dir / "memory_archive.sqlite3")
+            )
+            archive.register_user(self.profile.user_id, self.profile.name)
+        except (sqlite3.Error, OSError):
+            self.memory_archive_error = (
+                "가족 기억 DB 초기화 오류로 가족 기억 기능을 사용할 수 없습니다. "
+                "다른 로봇 기능은 계속 사용할 수 있습니다."
+            )
+        else:
+            self.memory_archive = archive
         self.robot_id = "R001"
         self.battery = max(0, min(100, int(saved.get("battery", 85))))
         self.status = saved.get("status", "정상")
@@ -433,6 +444,10 @@ def run_gui() -> None:
     subtitle.pack(anchor="w", padx=27, pady=(0, 16))
     status_label = tk.Label(root, text="", fg=BLUE, bg=BASE, font=(FONT, 10, "bold"))
     status_label.place(relx=0.99, y=42, anchor="e")
+
+    if robot.memory_archive_error:
+        tk.Label(root, text=robot.memory_archive_error, fg="#FFD5A4", bg=BASE,
+                 font=(FONT, 11)).pack(anchor="w", padx=26, pady=(0, 12))
 
     tabs = ttk.Notebook(root)
     tabs.pack(fill="both", expand=True, padx=26, pady=(0, 20))

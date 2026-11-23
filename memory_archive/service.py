@@ -47,8 +47,12 @@ class MemoryArchive:
     def __init__(self, db_path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        schema = Path(__file__).with_name("schema.sql").read_text(encoding="utf-8")
         with self._db() as db:
-            db.executescript(Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
+            if db.execute("PRAGMA quick_check(1)").fetchone()[0] != "ok":
+                raise sqlite3.DatabaseError("Family memory database failed its integrity check")
+            # executescript closes the read transaction. Run all schema changes in one write transaction.
+            db.executescript("BEGIN IMMEDIATE;\n" + schema)
 
     @contextmanager
     def _db(self, *, write=False):

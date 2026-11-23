@@ -1,9 +1,96 @@
+from contextlib import closing
+from datetime import datetime
 from pathlib import Path
+import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from companion_robot import JsonStore, Robot
 from memory_archive import ArchiveError, MemoryArchive
+
+
+class MemoryArchiveStartupTest(unittest.TestCase):
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.store = JsonStore(directory.name)
+        self.db_path = self.store.data_dir / "memory_archive.sqlite3"
+
+    def test_robot_initializes_new_database_and_registers_profile(self):
+        self.assertFalse(self.db_path.exists())
+        robot = Robot(self.store)
+        self.assertIsInstance(robot.memory_archive, MemoryArchive)
+        self.assertIsNone(robot.memory_archive_error)
+        actor_id = robot.profile.user_id
+        archive_id = robot.memory_archive.create_archive(actor_id, "내 기억")
+        self.assertEqual(robot.memory_archive.list_archives(actor_id)[0]["archive_id"], archive_id)
+
+    def test_opening_invalid_database_directly_reports_database_error(self):
+        self.db_path.write_bytes(b"not a SQLite database")
+        with self.assertRaises(sqlite3.DatabaseError):
+            MemoryArchive(self.db_path)
+
+    def test_corrupt_database_does_not_block_core_features(self):
+        self.db_path.write_bytes(b"not a SQLite database")
+        robot = Robot(self.store)
+        self.assertIsNone(robot.memory_archive)
+        self.assertIn("가족 기억 DB 초기화 오류", robot.memory_archive_error)
+        self.assertEqual(robot.start_conversation("안녕하세요")[1], "greeting")
+        robot.medications.add("예시약", "09:00")
+        self.assertEqual(len(robot.check_medication(datetime(2026, 11, 23, 9, 2))), 1)
+        self.assertEqual(robot.navigator.route("거실", "주방"), ["거실", "주방"])
+        self.assertIsInstance(robot.get_gas_status_summary(), str)
+
+    def test_corrupt_sqlite_page_is_detected_and_original_file_is_preserved(self):
+        archive = MemoryArchive(self.db_path)
+        archive.register_user("user", "사용자")
+        archive_id = archive.create_archive("user", "보관함")
+        archive.create_memory("user", archive_id, "제목", "본문")
+        with closing(sqlite3.connect(self.db_path)) as db:
+            page_size = db.execute("PRAGMA page_size").fetchone()[0]
+            page_number = db.execute(
+                "SELECT rootpage FROM sqlite_master WHERE name='memory_revision'"
+            ).fetchone()[0]
+        original = bytearray(self.db_path.read_bytes())
+        original[(page_number - 1) * page_size] = 0
+        self.db_path.write_bytes(original)
+        file_before = self.db_path.stat()
+
+        for _ in range(2):
+            robot = Robot(self.store)
+            self.assertIsNone(robot.memory_archive)
+            self.assertIsNotNone(robot.memory_archive_error)
+        self.assertEqual(self.db_path.read_bytes(), bytes(original))
+        file_after = self.db_path.stat()
+        self.assertEqual((file_after.st_ino, file_after.st_mtime_ns),
+                         (file_before.st_ino, file_before.st_mtime_ns))
+
+    def test_database_failure_during_profile_registration_disables_archive(self):
+        archive = MemoryArchive(self.db_path)
+        with patch.object(archive, "register_user", side_effect=sqlite3.OperationalError("database is locked")):
+            robot = Robot(self.store, memory_archive=archive)
+        self.assertIsNone(robot.memory_archive)
+        self.assertIsNotNone(robot.memory_archive_error)
+        self.assertIsNotNone(Robot(self.store, memory_archive=archive).memory_archive)
+
+    def test_restart_preserves_existing_memory_crud_and_version_conflicts(self):
+        initial = Robot(self.store)
+        actor_id = initial.profile.user_id
+        archive_id = initial.memory_archive.create_archive(actor_id, "내 기억")
+        memory_id = initial.memory_archive.create_memory(actor_id, archive_id, "제목", "원래 본문")
+
+        reopened = Robot(self.store).memory_archive
+        self.assertEqual(reopened.get_memory(actor_id, memory_id)["content"], "원래 본문")
+        self.assertEqual(reopened.update_memory(actor_id, memory_id, 1, "제목", "수정된 본문"), 2)
+        with self.assertRaises(ArchiveError) as error:
+            initial.memory_archive.update_memory(actor_id, memory_id, 1, "제목", "오래된 수정")
+        self.assertEqual(error.exception.code, "CONFLICT")
+        restored = Robot(self.store).memory_archive
+        self.assertEqual([row["content"] for row in restored.history(actor_id, memory_id)],
+                         ["수정된 본문", "원래 본문"])
+        restored.delete_memory(actor_id, memory_id, 2)
+        self.assertEqual(Robot(self.store).memory_archive.search(actor_id), [])
 
 
 class MemoryArchiveTest(unittest.TestCase):

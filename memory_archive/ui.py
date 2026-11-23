@@ -8,6 +8,12 @@ from .service import ArchiveError
 
 def build_memory_archive_tab(parent, robot, on_state_change):
     service = robot.memory_archive
+    if service is None:
+        ttk.Label(parent, text=robot.memory_archive_error, wraplength=700).pack(
+            anchor="w", padx=16, pady=16
+        )
+        return
+
     actor_id = robot.profile.user_id
     archives = []
     results = []
