@@ -41,3 +41,15 @@ git push -u origin HEAD
 ```
 
 GitHub에서 본인 브랜치 → `main` PR을 만들고 팀 리더 검토 후 병합합니다. ZIP 자체나 실제 건강 데이터는 올리지 않습니다.
+
+## 로컬 웨어러블 브리지
+
+```bash
+python -m health_monitor --sample /path/to/latest_sample.json
+```
+
+팀 GUI에서 사용하려면 SD대로 `create_default_monitor`를 연결한 뒤 `HEALTH_WEARABLE_JSON`을 샘플의 절대 경로로 설정하고 로봇을 실행하세요. 포맷과 시간 제한은 SD를 참고하세요. 파일이 같으면 같은 샘플을 재수집하지 않습니다. 이 경로는 BLE 제조사 SDK가 아니라 SDK/장치 측 수집기가 내보내는 JSON을 잇는 어댑터입니다.
+
+## 제출 및 운영 상태
+
+오프라인 단위 테스트 10개 통과. 기존 코어 전체 회귀, 실기기, Tkinter 화면 동작, 실제 DUR 키 유효성은 미검증입니다. 운영/의료 서비스 투입본이 아니라 팀 통합 및 시연용 구현입니다. 키를 채팅, 명령 인자, 화면 캡처, 커밋에 넣지 마세요.
