@@ -17,10 +17,12 @@ import json
 import math
 from pathlib import Path
 import re
+import sqlite3
 import threading
 from typing import Any
 
 from health_monitor import HealthMonitor, create_default_monitor
+from memory_archive import MemoryArchive
 
 from smart_home import (
     CommandResult,
@@ -262,12 +264,29 @@ class Robot:
     def __init__(
         self, store: JsonStore, smart_home: SmartHomeController | None = None,
         health_monitor: HealthMonitor | None = None,
+        *,
+        memory_archive: MemoryArchive | None = None,
     ):
         self.store = store
         saved = store.load()
         profile_saved = saved.get("profile", {})
         self.profile = UserProfile(**{k: profile_saved.get(k, getattr(UserProfile(), k))
                                       for k in UserProfile.__dataclass_fields__})
+        self.memory_archive: MemoryArchive | None = None
+        self.memory_archive_error: str | None = None
+        try:
+            archive = (
+                memory_archive if memory_archive is not None
+                else MemoryArchive(store.data_dir / "memory_archive.sqlite3")
+            )
+            archive.register_user(self.profile.user_id, self.profile.name)
+        except (sqlite3.Error, OSError):
+            self.memory_archive_error = (
+                "가족 기억 DB 초기화 오류로 가족 기억 기능을 사용할 수 없습니다. "
+                "다른 로봇 기능은 계속 사용할 수 있습니다."
+            )
+        else:
+            self.memory_archive = archive
         self.robot_id = "R001"
         self.battery = max(0, min(100, int(saved.get("battery", 85))))
         self.status = saved.get("status", "정상")
@@ -396,6 +415,7 @@ def run_gui() -> None:
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
     from health_monitor.ui import build_health_monitor_tab
+    from memory_archive.ui import build_memory_archive_tab
 
     BASE = "#0B1524"
     PANEL = "#11253B"
@@ -432,6 +452,10 @@ def run_gui() -> None:
     status_label = tk.Label(root, text="", fg=BLUE, bg=BASE, font=(FONT, 10, "bold"))
     status_label.place(relx=0.99, y=42, anchor="e")
 
+    if robot.memory_archive_error:
+        tk.Label(root, text=robot.memory_archive_error, fg="#FFD5A4", bg=BASE,
+                 font=(FONT, 11)).pack(anchor="w", padx=26, pady=(0, 12))
+
     tabs = ttk.Notebook(root)
     tabs.pack(fill="both", expand=True, padx=26, pady=(0, 20))
     tab1, tab2, tab3, tab4, tab5 = (ttk.Frame(tabs, style="Panel.TFrame") for _ in range(5))
@@ -440,6 +464,10 @@ def run_gui() -> None:
     tabs.add(tab3, text="3단계 · 실내 이동")
     tabs.add(tab4, text="4단계 · 안전/통합")
     tabs.add(tab5, text="5단계 · 스마트홈")
+    health_tab = ttk.Frame(tabs, style="Panel.TFrame")
+    tabs.add(health_tab, text="건강 모니터링")
+    memory_tab = ttk.Frame(tabs, style="Panel.TFrame")
+    tabs.add(memory_tab, text="가족 기억")
 
     def label(parent, text, heading=False):
         return ttk.Label(parent, text=text, style="Heading.TLabel" if heading else "TLabel")
@@ -658,11 +686,12 @@ def run_gui() -> None:
 
     label(inner4, "주의: 실제 낙상 감지 장치, 위치 정보, 구조기관 전송, 응급 대응 기능이 아닙니다.").pack(anchor="w", pady=(12, 0))
 
-    # -------- 5단계 (독립 모듈 연결) --------
+    # -------- 독립 모듈 연결 --------
     build_smart_home_tab(tab5, robot, on_state_change=lambda: (update_status(), refresh_alerts()))
-    health_tab = ttk.Frame(tabs, style="Panel.TFrame")
-    tabs.add(health_tab, text="건강 모니터링")
-    build_health_monitor_tab(health_tab, robot, on_state_change=lambda: (robot.save(), refresh_alerts(), update_status()))
+    build_health_monitor_tab(
+        health_tab, robot, on_state_change=lambda: (robot.save(), refresh_alerts(), update_status())
+    )
+    build_memory_archive_tab(memory_tab, robot, on_state_change=update_status)
 
     def scheduled_check():
         robot.check_medication()
