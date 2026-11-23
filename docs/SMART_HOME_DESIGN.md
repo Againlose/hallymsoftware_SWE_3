@@ -1,14 +1,15 @@
-# Smart Home Control 상세 설계 및 API 인터페이스 규약 (v0.2)
+# Smart Home Control 상세 설계 및 API 인터페이스 규약 (v1.0)
 
 | 항목 | 내용 |
 | :--- | :--- |
-| **문서 버전** | v0.2 |
+| **문서 버전** | v1.0 (구현 완료 · 호출 레퍼런스 포함) |
 | **작성일** | 2026-11-23 |
 | **작성자** | 3번 개발자 (Smart Home Control / BRD / PRD 담당) |
-| **상위 및 연계 문서** | `PRD.md` (v0.2), `MODULE_INTEGRATION_GUIDE.md` (v0.1) |
-| **기준 코드베이스** | `hallymsoftware_SWE_3` (`Sangin` / `main` `7043a17`) |
-| **문서 목적** | 구현 전 패키지 경계·인터페이스·JSON 규약·테스트 기준을 고정하고, AI/인간 개발자가 환각 없이 일관되게 참조할 수 있는 설계 규약 제공 |
+| **상위 및 연계 문서** | `PRD.md` (v0.3), `MODULE_INTEGRATION_GUIDE.md` (v0.1) |
+| **기준 코드베이스** | `hallymsoftware_SWE_3` (`Sangin` — `smart_home/` + `companion_robot.py` + `test_smart_home.py`) |
+| **문서 목적** | 구현 완료된 패키지 구조·인터페이스·JSON 규약·테스트 기준을 고정하고, 타 팀원 및 AI 에이전트가 즉시 호출·연동할 수 있는 레퍼런스 제공 |
 
+> **v1.0 변경 요약**: `smart_home/` 패키지 및 `test_smart_home.py` 구현 완료 반영, `SmartHomeController`/`Robot` 전체 공개 메서드 및 `Section 8. 빠른 시작 및 호출 레퍼런스(Quickstart)` 추가.
 > **v0.2 변경 요약**: 다중 외부 스마트홈 플랫폼 논의 생략(가스불 차단기 전용 어댑터 계약으로 단순화), `MODULE_INTEGRATION_GUIDE.md`를 팀 공통 통합 기준으로 명시.
 
 ---
@@ -164,18 +165,22 @@ class SmartHomeApiClient(ABC):
 * **`SmartHomeController`**
   * 생성자: `SmartHomeController(api_client: SmartHomeApiClient | None = None, long_open_threshold_minutes: int = 30)`
     * `api_client` 미전달 시 기본 `MockSmartHomeApiClient()` 사용.
-  * 주요 메서드:
-    * `register_device(device: SmartDevice) -> None`
+  * 주요 메서드 및 팩토리:
+    * `register_device(device: SmartDevice) -> None`: 기기 등록 및 어댑터 초기 상태 동기화
+    * `get_device(device_id: str = "gas_valve_main") -> SmartDevice`: 등록 기기 반환(미등록 시 `DeviceNotFoundError`)
+    * `list_devices() -> list[SmartDevice]`: 등록된 전체 기기 목록 반환
     * `get_device_status(device_id: str = "gas_valve_main") -> DeviceStatus`
-      * 등록 기기 확인 후 `api_client.fetch_device_status()` 호출(동기화) → 통신 실패 시 예외 전파 또는 `OFFLINE` 상태 안전 반환 규약에 따라 처리.
+      * 등록 기기 확인 후 `api_client.fetch_device_status()` 호출(동기화) → 통신 실패 시 `ApiConnectionError` 발생.
     * `request_gas_shutoff(device_id: str = "gas_valve_main") -> CommandResult`
       * 어댑터 `send_device_command(device_id, "SHUT_OFF")` 호출 → 성공 시 로컬 `SmartDevice.handle_command("SHUT_OFF")` 동기화.
       * 통신 실패(`ApiConnectionError`, `ok=False`) 시 예외로 앱을 종료하지 않고 `CommandResult(success=False, ...)`를 반환하여 상위(`Robot`)가 `AlertService` 경고 로그를 생성하도록 보장(Fail-Safe).
     * `simulate_gas_open(device_id: str = "gas_valve_main", opened_minutes: int = 0) -> CommandResult`
       * 테스트·UI 시연용으로 가스 열림 상태와 경과 시간을 주입하고 Mock 어댑터와 동기화.
     * `check_gas_safety(device_id: str = "gas_valve_main") -> tuple[bool, str]`
-      * 현재 `OPEN` 상태이고 `opened_minutes >= long_open_threshold_minutes`이면 `(False, 경고 메시지)` 반환, 그 외 안전한 경우 `(True, 정상 메시지)` 반환.
-    * `to_dict() -> dict[str, Any]` / `load_from_dict(data: dict[str, Any]) -> None`
+      * 현재 `OPEN` 상태이고 `opened_minutes >= long_open_threshold_minutes`이면 `(False, 경고 메시지)` 반환, 통신/기기 이상 시 `(False, 안내 메시지)` 반환, 그 외 안전한 경우 `(True, 정상 메시지)` 반환.
+    * `set_fault_mode(offline: bool = False, fail_commands: bool = False) -> None`: 어댑터 장애 모드 주입
+    * `to_dict() -> dict[str, Any]` / `load_from_dict(data: dict[str, Any]) -> None`: JSON 직렬화·복원
+    * `create_default_controller() -> SmartHomeController`: `MockSmartHomeApiClient` + 기본 `GasValve("gas_valve_main", "주방 가스밸브")`가 등록된 컨트롤러 생성 팩토리
 
 ---
 
@@ -217,10 +222,12 @@ class SmartHomeApiClient(ABC):
      * `"smart_home_status"`: `["가스불 확인해줘", "가스밸브 상태 알려줘", "가스 켜져 있어", "주방 가스 잠겼는지 확인", "가스 상태 조회"]`
      * `"smart_home_shutoff"`: `["가스불 꺼줘", "가스밸브 잠가줘", "가스 차단해줘", "주방 가스 불 꺼줘", "가스 잠금 실행"]`
    * 구현 후 기존 5개 테스트 발화 + 신규 가스 발화 전체에 대한 의도 분류 비충돌 회귀 테스트를 필수로 실행한다.
-4. **`Robot.generate_reply` 및 스마트홈 보조 메서드**
-   * `smart_home_status` → `self.smart_home.get_device_status()` 조회 후 상태 요약 응답(통신 오류 시 안전 안내 + `self.alerts.create("스마트홈/가스", ...)`).
-   * `smart_home_shutoff` → `self.smart_home.request_gas_shutoff()` 실행 후 결과 응답 + `self.alerts.create("스마트홈/가스", ...)` 기록.
-   * `Robot.check_gas_safety()` 헬퍼 메서드를 두어 장시간 개방 시 `self.alerts.create("스마트홈/가스 경고", ...)`와 상태 저장 수행.
+4. **`Robot.generate_reply` 및 스마트홈 공개 헬퍼 메서드**
+   * `smart_home_status` → `self.get_gas_status_summary()` 호출 후 상태 요약 응답.
+   * `smart_home_shutoff` → `self.shut_off_gas().message` 반환.
+   * `Robot.get_gas_status_summary(device_id="gas_valve_main") -> str`: 상태 조회 및 오류 시 `AlertService("스마트홈/가스", ...)` 기록.
+   * `Robot.shut_off_gas(device_id="gas_valve_main") -> CommandResult`: 차단 실행, `"스마트홈/가스"`(또는 `"스마트홈/가스 오류"`) 알림 기록 및 `save()`.
+   * `Robot.check_gas_safety(device_id="gas_valve_main") -> tuple[bool, str]`: 장시간 개방·이상 시 `"스마트홈/가스 경고"` 알림 기록 및 `save()`.
 5. **`run_gui()` 탭 연결**
    * `tabs`에 `tab5 = ttk.Frame(tabs, style="Panel.TFrame")` (`"5단계 · 스마트홈"`)을 추가하고 `build_smart_home_tab(tab5, robot, on_state_change=...)`를 호출한다.
 
@@ -284,3 +291,104 @@ class SmartHomeApiClient(ABC):
 | **BR-02** | `FR-SH-04`, `UC-SH-04` | `SmartHomeController.check_gas_safety`, `Robot.check_gas_safety` | `TC-SH-06` |
 | **BR-04** | `FR-SH-05`, `NFR-SH-03`, `UC-SH-05` | `SmartHomeApiClient`, `MockSmartHomeApiClient` | `TC-SH-07`, `TC-SH-08`, `TC-SH-09` |
 | **BR-01, BR-02, BR-06** | `FR-SH-06`, `FR-SH-07`, `FR-SH-08`, `NFR-SH-05` | `IntentClassifier`, `Robot.generate_reply`, `build_smart_home_tab`, `AlertService` | `TC-SH-10`, `TC-SH-11` |
+
+---
+
+## 8. 빠른 시작 및 호출 레퍼런스 (개발자 · AI 에이전트용 Quickstart)
+
+다른 팀원이나 AI 코딩 에이전트가 Smart Home Control 모듈을 조회·제어·테스트할 때 아래 공개 심볼과 호출 예제를 그대로 사용할 수 있다.
+
+### 8.1 `smart_home/__init__.py` 공개 Export 심볼 (15종)
+
+| 심볼 | 구분 | 한 줄 요약 |
+| :--- | :--- | :--- |
+| `ValveState` | Enum | 가스밸브 상태 (`OPEN`, `CLOSED`, `SHUTTING_OFF`, `ERROR`, `OFFLINE`) |
+| `DeviceStatus` | Dataclass | 기기 상태 조회 결과 (`device_id`, `state`, `is_shut_off`, `opened_minutes`, `updated_at`, `source`) |
+| `CommandResult` | Dataclass | 제어 명령 실행 결과 (`success`, `previous_state`, `current_state`, `message`, `simulated`) |
+| `ApiResponse` | Dataclass | 어댑터 표준 응답 (`ok`, `status_code`, `payload`, `error_code`, `error_message`) |
+| `SmartHomeError` | Exception | 스마트홈 모듈 최상위 예외 |
+| `DeviceNotFoundError` | Exception | 미등록 `device_id` 조회/제어 시 발생 |
+| `ApiConnectionError` | Exception | 어댑터 통신 실패 또는 오프라인 상태 시 발생 |
+| `CommandExecutionError` | Exception | 미지원 명령 또는 기기 제어 실패 시 발생 |
+| `SmartDevice` | ABC | UML `<<interface>> 스마트기기` 대응 포트 |
+| `SmartHomeApiClient` | ABC | 가스불 차단기 제어 어댑터 추상 포트 |
+| `GasValve` | Class | UML `가스밸브` 구현체 (`is_shut_off`, `shut_off()`, `open_valve()`) |
+| `MockSmartHomeApiClient` | Class | 오프라인 테스트/데모용 로컬 Mock API 시뮬레이터 (`set_fault_mode()`) |
+| `SmartHomeController` | Class | UML `스마트홈제어기` 구현체 (`get_device_status()`, `request_gas_shutoff()`, `check_gas_safety()`) |
+| `create_default_controller` | Function | `MockSmartHomeApiClient` + `"주방 가스밸브"`가 등록된 기본 제어기 생성 |
+| `build_smart_home_tab` | Function | Tkinter `5단계 · 스마트홈` 탭 UI 빌더 |
+
+### 8.2 예제 1 — `Robot`을 통한 통합 호출 (대화 발화 + 헬퍼 메서드)
+
+```python
+from companion_robot import JsonStore, Robot
+
+robot = Robot(JsonStore("demo_data"))
+
+# 1) 가스 열림 시뮬레이션 (35분 경과) 및 장시간 개방 안전 점검
+robot.smart_home.simulate_gas_open(opened_minutes=35)
+is_safe, safety_msg = robot.check_gas_safety()
+print(is_safe, safety_msg)  # False, 경고 메시지 + AlertService("스마트홈/가스 경고") 기록
+
+# 2) 대화 발화로 상태 조회 및 가스 차단 실행
+reply, intent, conf = robot.start_conversation("가스불 확인해줘")
+print(intent, reply)
+
+reply_off, intent_off, _ = robot.start_conversation("가스불 꺼줘")
+print(intent_off, reply_off)  # smart_home_shutoff, 차단 완료 + 로컬 알림 기록
+
+# 3) 헬퍼 메서드 직접 호출
+print(robot.get_gas_status_summary())
+result = robot.shut_off_gas()
+print(result.success, result.current_state)
+```
+
+### 8.3 예제 2 — `smart_home` 단독 호출 (상태 제어 · 장애 주입)
+
+```python
+from smart_home import create_default_controller
+
+controller = create_default_controller()
+
+# 열림 시뮬레이션 후 상태 조회
+controller.simulate_gas_open(opened_minutes=15)
+status = controller.get_device_status()
+print(status.state, status.is_shut_off, status.opened_minutes)  # ValveState.OPEN, False, 15
+
+# 정상 차단
+res = controller.request_gas_shutoff()
+print(res.success, res.current_state, res.message)  # True, ValveState.CLOSED, ...
+
+# 통신 장애 Fail-Safe 확인
+controller.simulate_gas_open(opened_minutes=10)
+controller.set_fault_mode(offline=True)
+fail_res = controller.request_gas_shutoff()
+print(fail_res.success, fail_res.current_state)  # False, ValveState.OPEN (예외 크래시 없음)
+```
+
+### 8.4 예제 3 — 커스텀 `SmartHomeApiClient` 어댑터 주입 (DIP)
+
+```python
+from smart_home import ApiResponse, GasValve, SmartHomeApiClient, SmartHomeController, ValveState
+
+class CustomGatewayClient(SmartHomeApiClient):
+    def fetch_device_status(self, device_id: str) -> ApiResponse:
+        return ApiResponse(ok=True, status_code=200, payload={"device_id": device_id, "state": "OPEN", "opened_minutes": 5})
+
+    def send_device_command(self, device_id: str, command: str, params=None) -> ApiResponse:
+        return ApiResponse(ok=True, status_code=200, payload={"device_id": device_id, "command": command, "state": "CLOSED"})
+
+    def health_check(self) -> bool:
+        return True
+
+controller = SmartHomeController(api_client=CustomGatewayClient())
+controller.register_device(GasValve(initial_state=ValveState.OPEN, opened_minutes=5))
+print(controller.request_gas_shutoff().current_state)  # ValveState.CLOSED
+```
+
+### 8.5 테스트 실행 명령
+
+```bash
+python -m unittest -v
+```
+* 기존 코어 테스트(`test_companion_robot.py` 8건)와 Smart Home 테스트(`test_smart_home.py` 12건) 총 20건이 오프라인 환경에서 실행된다.
