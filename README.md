@@ -1,5 +1,3 @@
-*main 브랜치는 force push 등의 위험한 행동으로부터 보호되고 있습니다. 반드시 자기 이름 branch에서 개발하고 merge 요청하세요.*
-
 # AI Companion Robot
 
 AI 컴패니언 로봇(이동형 돌봄 로봇 + 충전/종합 설정용 터치스크린 키오스크 콘셉트)의 단계별 기능을 구현한 Python 기반 프로토타입 프로젝트입니다.
@@ -12,8 +10,7 @@ AI 컴패니언 로봇(이동형 돌봄 로봇 + 충전/종합 설정용 터치�
 
 * **구현 완료 (1~4단계 코어 · `companion_robot.py`)**: 한국어 TF-IDF 의도 분류 대화, 사용자 프로필, 복약 일정 알림, 키오스크 이용 안내, BFS 실내 경로 안내, 가상 거리·터치·낙상 센서, 로컬 알림 로그(`LOCAL_SIMULATION_ONLY`) 및 JSON 영속화.
 * **구현 완료 (5단계 Smart Home Control · `smart_home/`)**: 가스불 차단기(IoT 가스밸브) 상태 조회, 원격/음성 차단(멱등성 지원), 장시간 개방(기본 30분) 안전 점검, 제어 어댑터 장애(오프라인/구동 실패) Fail-Safe 시뮬레이션 및 `5단계 · 스마트홈` GUI 탭.
-* **구현 완료 (Health Monitoring · `health_monitor/`)**: 건강 모니터링 탭에서 심박수·산소포화도를 수집하고, 측정 이력을 표시하며, 이상 징후에 대한 사용자·보호자용 로컬 알림을 기록합니다.
-* **참고**: 코어 센서와 가스불 차단기는 소프트웨어 시뮬레이션입니다. 긴급·건강 알림은 앱에만 기록되며 119나 보호자에게 발송되지 않습니다.
+* **참고**: 모든 센서·차단기 제어·긴급 알림은 소프트웨어 시뮬레이션이며 실제 물리 장치나 외부 기관(119/보호자) 연결은 발생하지 않습니다.
 
 ---
 
@@ -22,10 +19,10 @@ AI 컴패니언 로봇(이동형 돌봄 로봇 + 충전/종합 설정용 터치�
 Python 표준 라이브러리 기반으로 별도 외부 패키지 설치 없이 바로 실행할 수 있습니다.
 
 ```bash
-# 1) Tkinter GUI 실행 (건강 모니터링·가족 기억 탭 포함)
+# 1) Tkinter GUI 실행 (5개 탭: 대화/프로필, 복약/키오스크, 실내 이동, 안전/통합, 스마트홈)
 python companion_robot.py
 
-# 2) 전체 단위/통합 테스트 실행
+# 2) 전체 단위/통합 테스트 실행 (코어 8건 + Smart Home 12건 = 총 20건)
 python -m unittest -v
 ```
 
@@ -53,14 +50,13 @@ python -m unittest -v
 
 ### `companion_robot.py`
 AI 컴패니언 로봇 코어 및 Tkinter GUI 실행 진입점입니다.
-프로그램 실행 시 `demo_data/companion_state.json`에 아래 정보를 로컬 저장하며 재실행 시 복원합니다. (코어는 로컬 JSON 원자적 저장 방식 사용)
+프로그램 실행 시 `demo_data/companion_state.json`에 아래 정보를 로컬 저장하며 재실행 시 복원합니다. (현재 프로토타입은 로그인/DB 없이 로컬 JSON 원자적 저장 방식 사용)
 * `profile`: 사용자 프로필(ID, 이름, 선호사항)
 * `history`: 대화 기록 및 의도 분류 결과
 * `medications`: 등록된 복약 일정 및 일일 알림 기록
 * `alerts`: 로컬 시뮬레이션 알림 로그
 * `battery`, `status`: 로봇 배터리 잔량 및 상태
 * `smart_home`: 가스불 차단기 및 시뮬레이션 장애 설정 상태
-* `health_monitor`: 건강 측정 이력 및 이상 징후 감지 상태
 
 ### `smart_home/` (독립 패키지 — 가스불 차단기 제어)
 객체지향 분리와 어댑터 교체를 위해 코어와 분리된 Smart Home Control 패키지입니다.
@@ -81,16 +77,7 @@ reply, intent, _ = robot.start_conversation("가스불 꺼줘")
 is_safe, msg = robot.check_gas_safety()
 ```
 
-### `health_monitor/` (건강 모니터링)
-
-기본값은 모의 측정입니다. `HEALTH_WEARABLE_JSON`에 웨어러블 수집기가 내보낸 JSON 파일 경로를 지정하면 해당 측정값을 읽습니다. [실행 및 입력 설정 안내](README_HEALTH_MONITOR.md)
-
-### `memory_archive/` (가족 기억 보관함)
-
-개인·가족 보관함, 접근 권한, 기억 검색·편집·버전 이력과 근거 미리보기를 제공합니다. 데이터는 `demo_data/memory_archive.sqlite3`에 저장합니다. [구현 문서 및 Python 호출 예시](docs/FAMILY_MEMORY_ARCHIVE.md)
-
 ### 테스트 코드
-* **`test_memory_archive.py`**: 재실행, 검색 필터, 권한 회수, 버전 충돌 및 기존 JSON 호환 검증
 * **`test_companion_robot.py`**: 코어 기능(의도 분류, 실내 경로, 거리센서, 복약 검증, 낙상 로컬 알림, 대화 영속화, 키오스크 가이드) 8개 테스트
 * **`test_smart_home.py`**: Smart Home Control(`TC-SH-01`~`TC-SH-12` — 가스 상태 조회/차단/멱등성, 장시간 개방 경고, API 오프라인·명령 실패 Fail-Safe, 커스텀 어댑터 DIP, 대화 의도 비충돌, JSON 영속화) 12개 테스트
 
@@ -100,6 +87,7 @@ is_safe, msg = robot.check_gas_safety()
 
 신규 모듈은 [docs/MODULE_INTEGRATION_GUIDE.md](docs/MODULE_INTEGRATION_GUIDE.md) 규약에 따라 루트 아래 독립 패키지로 구현합니다.
 
-* **Family Memory Archive (`memory_archive/`)**: 파일 첨부, 의미 검색 및 RAG 대화 연동
+* **Family Memory Archive (`memory_archive/`)**: 가족 기억 저장·키워드/DB 검색 및 대화 활용
+* **Health Monitoring (`health_monitor/`)**: 웨어러블 기기 연동 및 이상 징후 알림
 * **Family & Visitor Recognition (`visitor_recognition/`)**: 가족/방문자 인식 및 보호자 알림 *(필수/선택 범위 팀 최종 확인)*
 * **복약 리마인더 고도화 & 일상 대화 챗봇**: 복용 완료 확인·스누즈 재알림·미복용 경고([docs/PRD.md](docs/PRD.md) 3.2절) 및 일상 대화용 오픈웨이트(Ollama) 모델 연동 검토
