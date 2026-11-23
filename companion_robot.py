@@ -20,6 +20,8 @@ import re
 import threading
 from typing import Any
 
+from health_monitor import HealthMonitor, create_default_monitor
+
 from smart_home import (
     CommandResult,
     SmartHomeController,
@@ -257,7 +259,10 @@ class MedicationManager:
 
 
 class Robot:
-    def __init__(self, store: JsonStore, smart_home: SmartHomeController | None = None):
+    def __init__(
+        self, store: JsonStore, smart_home: SmartHomeController | None = None,
+        health_monitor: HealthMonitor | None = None,
+    ):
         self.store = store
         saved = store.load()
         profile_saved = saved.get("profile", {})
@@ -270,6 +275,8 @@ class Robot:
                         if isinstance(item, dict) and set(ConversationEntry.__dataclass_fields__).issubset(item)]
         self.medications = MedicationManager(saved.get("medications", []))
         self.alerts = AlertService(saved.get("alerts", []))
+        self.health_monitor = health_monitor if health_monitor is not None else create_default_monitor(self.alerts)
+        self.health_monitor.restore(saved.get("health_monitor"))
         self.touch = TouchSensor()
         self.distance = DistanceSensor()
         self.fall = FallSensor()
@@ -286,6 +293,7 @@ class Robot:
                          "status": self.status, "history": [asdict(x) for x in self.history[-200:]],
                          "medications": self.medications.entries,
                          "alerts": self.alerts.records[-100:],
+                         "health_monitor": self.health_monitor.snapshot(),
                          "smart_home": self.smart_home.to_dict()})
 
     def start_conversation(self, utterance: str) -> tuple[str, str, float]:
@@ -387,6 +395,7 @@ class Robot:
 def run_gui() -> None:
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
+    from health_monitor.ui import build_health_monitor_tab
 
     BASE = "#0B1524"
     PANEL = "#11253B"
@@ -651,6 +660,9 @@ def run_gui() -> None:
 
     # -------- 5단계 (독립 모듈 연결) --------
     build_smart_home_tab(tab5, robot, on_state_change=lambda: (update_status(), refresh_alerts()))
+    health_tab = ttk.Frame(tabs, style="Panel.TFrame")
+    tabs.add(health_tab, text="건강 모니터링")
+    build_health_monitor_tab(health_tab, robot, on_state_change=lambda: (robot.save(), refresh_alerts(), update_status()))
 
     def scheduled_check():
         robot.check_medication()
