@@ -12,9 +12,11 @@ def build_memory_archive_tab(parent, robot, on_state_change):
         ttk.Label(parent, text=robot.memory_archive_error, wraplength=700).pack(
             anchor="w", padx=16, pady=16
         )
-        return
+        return lambda: None
 
-    actor_id = robot.profile.user_id
+    def current_actor_id():
+        return robot.profile.user_id
+
     archives = []
     results = []
     selected_memory = None
@@ -31,7 +33,17 @@ def build_memory_archive_tab(parent, robot, on_state_change):
                               (5, "태그 (쉼표 구분)", tags)]:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=8)
         field.grid(row=row, column=1, columnspan=3, sticky="ew", padx=8, pady=3)
-    body = ScrolledText(parent, height=9, wrap="word")
+    body = ScrolledText(
+        parent,
+        height=9,
+        wrap="word",
+        font=("맑은 고딕", 10),
+        bg="#EAF4FB",
+        fg="#15283C",
+        padx=10,
+        pady=8,
+        relief="flat",
+    )
     body.grid(row=6, column=0, columnspan=4, sticky="nsew", padx=8, pady=6)
     visibility = ttk.Combobox(parent, state="readonly", values=("PRIVATE", "FAMILY"), width=12)
     visibility.set("PRIVATE")
@@ -49,7 +61,7 @@ def build_memory_archive_tab(parent, robot, on_state_change):
             messagebox.showerror("가족 기억", message, parent=parent)
 
     def refresh_archives():
-        archives[:] = service.list_archives(actor_id)
+        archives[:] = service.list_archives(current_actor_id())
         archive_select["values"] = [
             f"{item['name']} ({'가족' if item['family_id'] else '개인'})" for item in archives
         ]
@@ -63,7 +75,7 @@ def build_memory_archive_tab(parent, robot, on_state_change):
         return archives[index]["archive_id"]
 
     def search():
-        results[:] = service.search(actor_id, query.get(), archive_id=archive_id())
+        results[:] = service.search(current_actor_id(), query.get(), archive_id=archive_id())
         result_select.set("")
         result_select["values"] = [item["title"] for item in results]
         reset_form()
@@ -84,7 +96,7 @@ def build_memory_archive_tab(parent, robot, on_state_change):
         if index < 0:
             return
         reset_form()
-        selected_memory = service.get_memory(actor_id, results[index]["memory_id"])
+        selected_memory = service.get_memory(current_actor_id(), results[index]["memory_id"])
         item = selected_memory
         title.insert(0, item["title"])
         precision = {"DAY": 10, "MONTH": 7, "YEAR": 4, "UNKNOWN": 0}[item["date_precision"]]
@@ -100,6 +112,7 @@ def build_memory_archive_tab(parent, robot, on_state_change):
         if name is not None:
             if not name.strip():
                 raise ArchiveError("INVALID_INPUT", "보관함 이름을 입력하세요.")
+            actor_id = current_actor_id()
             family_id = service.create_family(actor_id, name) if family else None
             new_id = service.create_archive(actor_id, name, family_id=family_id)
             refresh_archives()
@@ -107,6 +120,7 @@ def build_memory_archive_tab(parent, robot, on_state_change):
             search()
 
     def save():
+        actor_id = current_actor_id()
         fields = {
             "title": title.get(),
             "content": body.get("1.0", "end-1c"),
@@ -123,12 +137,12 @@ def build_memory_archive_tab(parent, robot, on_state_change):
 
     def delete():
         if selected_memory and messagebox.askyesno("기억 삭제", "선택한 기억을 삭제할까요?", parent=parent):
-            service.delete_memory(actor_id, selected_memory["memory_id"], selected_memory["current_version"])
+            service.delete_memory(current_actor_id(), selected_memory["memory_id"], selected_memory["current_version"])
             search()
             on_state_change()
 
     def preview():
-        answer = service.answer_from_memories(actor_id, query.get())
+        answer = service.answer_from_memories(current_actor_id(), query.get())
         sources = "\n".join(f"{row['title']} · {row['revision_id']}" for row in answer["sources"])
         messagebox.showinfo("기억 근거 검색", "\n\n".join(filter(None, (answer["text"], sources))), parent=parent)
 
@@ -144,3 +158,4 @@ def build_memory_archive_tab(parent, robot, on_state_change):
     result_select.bind("<<ComboboxSelected>>", lambda _: invoke(load_memory))
     archive_select.bind("<<ComboboxSelected>>", lambda _: invoke(search))
     invoke(refresh_archives)
+    return lambda: invoke(refresh_archives)

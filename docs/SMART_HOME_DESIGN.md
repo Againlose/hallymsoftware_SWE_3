@@ -2,12 +2,14 @@
 
 | 항목 | 내용 |
 | :--- | :--- |
-| **문서 버전** | v1.0 (구현 완료 · 호출 레퍼런스 포함) |
-| **작성일** | 2026-11-23 |
+| **문서 버전** | v1.1 (통합 안정화 · UTC/KST 표준 반영) |
+| **작성일** | 2026-11-24 |
 | **작성자** | 3번 개발자 (Smart Home Control / BRD / PRD 담당) |
-| **상위 및 연계 문서** | `PRD.md` (v0.3), `MODULE_INTEGRATION_GUIDE.md` (v0.1) |
-| **기준 코드베이스** | `hallymsoftware_SWE_3` (`Sangin` — `smart_home/` + `companion_robot.py` + `test_smart_home.py`) |
+| **상위 및 연계 문서** | `PRD.md` (v0.4), `MODULE_INTEGRATION_GUIDE.md` (v0.2) |
+| **기준 코드베이스** | `hallymsoftware_SWE_3` (`Sangin` — `smart_home/` + `companion_robot.py` + `time_utils.py` + `test_smart_home.py`) |
 | **문서 목적** | 구현 완료된 패키지 구조·인터페이스·JSON 규약·테스트 기준을 고정하고, 타 팀원 및 AI 에이전트가 즉시 호출·연동할 수 있는 레퍼런스 제공 |
+
+> **v1.1 변경 요약**: 내부 타임스탬프(`updated_at`, `timestamp`) **UTC ISO 8601 (`+00:00`)** 저장 및 UI 표시 계층 **KST 변환(`format_local_time`)** 반영, 탭 전환 시 상태 라벨 갱신 콜백 반환(`build_smart_home_tab -> Callable[[], None]`) 반영.
 
 > **v1.0 변경 요약**: `smart_home/` 패키지 및 `test_smart_home.py` 구현 완료 반영, `SmartHomeController`/`Robot` 전체 공개 메서드 및 `Section 8. 빠른 시작 및 호출 레퍼런스(Quickstart)` 추가.
 > **v0.2 변경 요약**: 다중 외부 스마트홈 플랫폼 논의 생략(가스불 차단기 전용 어댑터 계약으로 단순화), `MODULE_INTEGRATION_GUIDE.md`를 팀 공통 통합 기준으로 명시.
@@ -252,14 +254,15 @@ class SmartHomeApiClient(ABC):
         "name": "주방 가스밸브",
         "state": "CLOSED",
         "opened_minutes": 0,
-        "updated_at": "2026-11-23T14:15:00"
+        "updated_at": "2026-11-23T05:15:00+00:00"
       }
     }
   }
 }
 ```
 
-* 구버전 `companion_state.json`에 `"smart_home"` 키가 없더라도 예외 없이 기본값(`CLOSED`, `0분`)으로 안전하게 초기화된다.
+* 내부 저장 시각(`updated_at`, `timestamp`)은 **RFC 3339 / ISO 8601 UTC (`+00:00`)**를 사용하며, GUI(`smart_home/ui.py`)에서 `time_utils.format_local_time()`으로 로컬 KST로 변환해 표시한다.
+* 구버전 `companion_state.json`에 `"smart_home"` 키나 타임존 표기가 없더라도 예외 없이 기본값(`CLOSED`, `0분`)으로 안전하게 초기화된다.
 
 ---
 

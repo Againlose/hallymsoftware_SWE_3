@@ -8,13 +8,19 @@ def build_smart_home_tab(
     parent: Any,
     robot: Any,
     on_state_change: Callable[[], None] | None = None,
-) -> None:
+) -> Callable[[], None]:
     """기존 Tkinter 테마와 호환되는 가스불 차단기 제어·시뮬레이션 탭을 구성한다."""
     import tkinter as tk
     from tkinter import scrolledtext, ttk
 
     from .exceptions import SmartHomeError
     from .models import ValveState
+
+    try:
+        from time_utils import format_local_time
+    except ImportError:
+        def format_local_time(iso_str: str) -> str:  # type: ignore[misc]
+            return iso_str
 
     PANEL = "#11253B"
     NAVY = "#143B5D"
@@ -63,7 +69,7 @@ def build_smart_home_tab(
         try:
             st = robot.smart_home.get_device_status()
             state_txt = "잠김(차단됨)" if st.is_shut_off else f"{st.state.value} (경과 {st.opened_minutes}분)"
-            status_var.set(f"주방 가스밸브 상태: {state_txt} · 최근 갱신 {st.updated_at}")
+            status_var.set(f"주방 가스밸브 상태: {state_txt} · 최근 갱신 {format_local_time(st.updated_at)}")
         except SmartHomeError as exc:
             status_var.set(f"주방 가스밸브 상태: 통신 오류 ({exc})")
 
@@ -169,3 +175,4 @@ def build_smart_home_tab(
     ).pack(anchor="w")
 
     refresh_status_label()
+    return refresh_status_label

@@ -2,13 +2,14 @@
 
 | 항목 | 내용 |
 | :--- | :--- |
-| **문서 버전** | v0.3 |
-| **작성일** | 2026-11-23 |
+| **문서 버전** | v0.4 |
+| **작성일** | 2026-11-24 |
 | **작성자** | 3번 개발자 (팀 리더 · Smart Home Control / BRD / PRD 담당) |
-| **상위 및 연계 문서** | `BRD.md` (v0.3), `MODULE_INTEGRATION_GUIDE.md` (v0.1) |
+| **상위 및 연계 문서** | `BRD.md` (v0.4), `MODULE_INTEGRATION_GUIDE.md` (v0.2) |
 | **기준 자료** | `가정 돌봄로봇 모듈 확장 UML 다이어그램.png`, `hallymsoftware_SWE_3/companion_robot.py` |
 | **문서 성격** | ISO/IEC/IEEE 29148의 제품/시스템 요구사항 명세 체계를 참고한 실용 중심 문서 |
 
+> **v0.4 변경 요약**: 4개 영역(`companion_robot.py`, `smart_home/`, `health_monitor/`, `memory_archive/`) 통합 프로토타입 구현 완료 반영, `ai_model`/`medications` DI 확장 경계 및 RFC 3339 / ISO 8601 UTC 내부 저장·KST 표시 변환 표준 반영.
 > **v0.3 변경 요약**: **Section 3.2 복약 리마인더(Medication Reminder) 고도화 요구사항**(`UC-MED-01`~`03`, `FR-MED-01`~`05`, `AC-MED-01`~`02`) 추가(3번 개발자 구현 범위 외, 타 팀원 구현용 문서화), `jira-readonly` MCP 연동 준비 완료 반영.
 > **v0.2 변경 요약**: Smart Home Control 구현 범위를 **가스불 차단기(가스밸브)** 단일 제어로 명확화, 다중 상용 플랫폼 논의 생략 및 어댑터 중심 단순화, 상업적 사용 가능 OSS 패키지 허용 정책 반영, `MODULE_INTEGRATION_GUIDE.md` 연동.
 
@@ -23,11 +24,11 @@ AI 컴패니언 로봇은 이동형 돌봄 로봇과 충전·종합 설정용 �
 
 | 구분 | 모듈명 | 주요 역할 (UML 기준) | 현재 상태 및 비고 |
 | :--- | :--- | :--- | :--- |
-| **1. 기존 로봇 코어** | Core (`Robot`, `IntentClassifier`, `Navigator`, `MedicationManager`, `AlertService`, `JsonStore`) | 음성/텍스트 대화, 프로필 관리, 복약 알림, 실내 경로 안내, 가상 낙상/거리/터치 감지 | 구현 완료 (`companion_robot.py`). **복약 리마인더 고도화**는 본 PRD Section 3.2에 문서화 완료(타 팀원 구현 대상), 일상 대화용 **오픈웨이트(Ollama)** 모델 연동 검토 중 |
-| **2. 확장 예정** | Family Memory Archive | 가족 기억 저장·검색 및 대화 활용 | 타 팀원 담당 (`MODULE_INTEGRATION_GUIDE.md` 규약 적용) |
-| **3. 확장 예정 (본 문서 대상)** | **Smart Home Control** | 이름은 Smart Home Control이나, **현 단계에서는 가스불 차단기(가스밸브) 상태 조회·차단 시뮬레이션과 제어 어댑터 구조에만 집중** | **설계 완료 · 구현 대기 (본 PRD 대상)** |
-| **4. 확장 예정** | Health Monitoring | 웨어러블 기기 연동 및 생체 데이터 이상 징후 확인 | 타 팀원 담당 (`MODULE_INTEGRATION_GUIDE.md` 규약 적용) |
-| **5. 확장 예정** | Family & Visitor Recognition | 가족/방문자 인식 및 보호자 알림 생성 | 타 팀원 담당 (`MODULE_INTEGRATION_GUIDE.md` 규약 적용) |
+| **1. 기존 로봇 코어** | Core (`Robot`, `IntentClassifier`, `Navigator`, `MedicationManager`, `AlertService`, `JsonStore`) | 음성/텍스트 대화, 프로필 관리, 복약 알림, 실내 경로 안내, 가상 낙상/거리/터치 감지 | 구현 완료 (`companion_robot.py`). **복약 리마인더 고도화**(`medications` DI) 및 **Ollama 챗봇**(`ai_model` DI)은 코어 결합 없이 교체 확장 가능하도록 인터페이스 경계 확보 |
+| **2. 구현 완료** | Family Memory Archive (`memory_archive/`) | 가족 기억 저장·검색(SQLite) 및 대화창(`memory_search`)·GUI 7단계 탭 연동 | **프로토타입 구현 완료** (RAG/pgvector는 향후 확장) |
+| **3. 구현 완료 (본 문서 중점)** | **Smart Home Control** (`smart_home/`) | **가스불 차단기(가스밸브) 상태 조회·차단 시뮬레이션, 장애 Fail-Safe 및 제어 어댑터 구조** | **구현 및 통합 완료** (`5단계 · 스마트홈` 탭 + 대화 의도) |
+| **4. 구현 완료** | Health Monitoring (`health_monitor/`) | 심박·산소포화도 수집, 이상 징후 시연 입력(`MockWearable`), 역할별 로컬 알림, 대화(`health_check`) 연동 | **프로토타입 구현 완료** (실기기 BLE 연동은 향후 확장) |
+| **5. 향후 확장 예정** | Family & Visitor Recognition | 가족/방문자 인식 및 보호자 알림 생성 | 향후 확장 예정 (`visitor_recognition/` 예약) |
 
 ---
 

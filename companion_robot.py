@@ -1,11 +1,14 @@
-"""단계별 AI 컴패니언 로봇: 외부 API 없이 실행 가능한 교육용 데모.
+"""단계별 AI 컴패니언 로봇: 외부 API 없이 실행 가능한 통합 시뮬레이션 프로토타입.
 
 1단계: 의도 분류·텍스트 대화·기록·프로필
 2단계: 약 복용 일정 및 키오스크 안내
 3단계: 실내 경로 탐색·가상 거리/터치 센서
 4단계: 가상 넘어짐 감지·위험 알림 및 통합
+5단계: 스마트홈 가스불 차단기 IoT 시뮬레이션
+6단계: 건강 모니터링(심박·산소포화도 시뮬레이션)
+7단계: 가족 기억 보관함(SQLite)
 
-중요: 센서 값과 응급 알림은 시뮬레이션입니다. 실제 기관 연락이 발생하지 않습니다.
+중요: 센서·차단기 값과 응급·건강 알림은 시뮬레이션입니다. 실제 기관 연락이 발생하지 않습니다.
 """
 from __future__ import annotations
 
@@ -22,7 +25,7 @@ import threading
 from typing import Any
 
 from health_monitor import HealthMonitor, create_default_monitor
-from memory_archive import MemoryArchive
+from memory_archive import ArchiveError, MemoryArchive
 
 from smart_home import (
     CommandResult,
@@ -32,6 +35,7 @@ from smart_home import (
     build_smart_home_tab,
     create_default_controller,
 )
+from time_utils import format_local_time, to_utc_iso, utc_now_iso
 
 
 @dataclass
@@ -149,6 +153,8 @@ class IntentClassifier:
         "emergency": ["넘어졌어 도와줘", "쓰러졌어", "위험한 상황이야", "긴급 도움 요청", "낙상 발생 도움"],
         "smart_home_status": ["가스불 확인해줘", "가스밸브 상태 알려줘", "가스 켜져 있어", "주방 가스 잠겼는지 확인", "가스 상태 조회"],
         "smart_home_shutoff": ["가스불 꺼줘", "가스밸브 잠가줘", "가스 차단해줘", "주방 가스 불 꺼줘", "가스 잠금 실행"],
+        "health_check": ["건강 상태 확인해줘", "심박수 알려줘", "산소포화도 확인", "심박수와 산소포화도 확인", "내 건강 측정 결과"],
+        "memory_search": ["가족 기억 찾아줘", "저장된 추억 검색해줘", "기억 보관함에서 찾아줘", "가족 추억 알려줘", "내 기억 검색"],
     }
 
     def __init__(self):
@@ -230,7 +236,7 @@ class AlertService:
         self.records = records if records is not None else []
 
     def create(self, category: str, message: str, when: datetime | None = None) -> dict[str, str]:
-        rec = {"time": (when or datetime.now()).isoformat(timespec="seconds"),
+        rec = {"time": to_utc_iso(when),
                "category": category, "message": message, "delivery": "LOCAL_SIMULATION_ONLY"}
         self.records.append(rec)
         return rec
@@ -266,6 +272,8 @@ class Robot:
         health_monitor: HealthMonitor | None = None,
         *,
         memory_archive: MemoryArchive | None = None,
+        ai_model: Any | None = None,
+        medications: MedicationManager | None = None,
     ):
         self.store = store
         saved = store.load()
@@ -292,7 +300,9 @@ class Robot:
         self.status = saved.get("status", "정상")
         self.history = [ConversationEntry(**item) for item in saved.get("history", [])
                         if isinstance(item, dict) and set(ConversationEntry.__dataclass_fields__).issubset(item)]
-        self.medications = MedicationManager(saved.get("medications", []))
+        self.medications = (
+            medications if medications is not None else MedicationManager(saved.get("medications", []))
+        )
         self.alerts = AlertService(saved.get("alerts", []))
         self.health_monitor = health_monitor if health_monitor is not None else create_default_monitor(self.alerts)
         self.health_monitor.restore(saved.get("health_monitor"))
@@ -300,7 +310,7 @@ class Robot:
         self.distance = DistanceSensor()
         self.fall = FallSensor()
         self.navigator = Navigator()
-        self.ai_model = IntentClassifier()
+        self.ai_model = ai_model if ai_model is not None else IntentClassifier()
         self.voice_processor = VoiceProcessor()
         self.last_reply = ""
         self.smart_home = smart_home if smart_home is not None else create_default_controller()
@@ -324,8 +334,7 @@ class Robot:
             self.battery = max(0, self.battery - 1)
         reply = self.generate_reply(intent, text)
         self.last_reply = reply
-        self.history.append(ConversationEntry(datetime.now().isoformat(timespec="seconds"),
-                                              text, reply, intent, confidence))
+        self.history.append(ConversationEntry(utc_now_iso(), text, reply, intent, confidence))
         self.save()
         return reply, intent, confidence
 
@@ -353,7 +362,11 @@ class Robot:
             return self.get_gas_status_summary()
         if intent == "smart_home_shutoff":
             return self.shut_off_gas().message
-        return "요청을 정확히 분류하지 못했습니다. '약 복용', '화장실 이동', '키오스크', '상태 확인', '가스불 꺼줘'처럼 말씀해 주세요."
+        if intent == "health_check":
+            return self.get_health_status_summary()
+        if intent == "memory_search":
+            return self.search_memory_summary(text)
+        return "요청을 정확히 분류하지 못했습니다. '약 복용', '화장실 이동', '가스불 꺼줘', '심박수 확인', '가족 기억 찾아줘'처럼 말씀해 주세요."
 
     def trigger_fall(self) -> None:
         self.fall.fallen = True
@@ -410,6 +423,46 @@ class Robot:
             self.save()
         return is_safe, msg
 
+    def update_profile(self, name: str, preferences: str) -> None:
+        self.profile.name = name.strip() or "사용자"
+        self.profile.preferences = preferences.strip()
+        if self.memory_archive is not None:
+            try:
+                self.memory_archive.register_user(self.profile.user_id, self.profile.name)
+            except (sqlite3.Error, OSError):
+                pass
+        self.save()
+
+    def get_health_status_summary(self) -> str:
+        raw = self.health_monitor.status()
+        if not self.health_monitor.history:
+            return f"{raw}. '6단계 · 건강 모니터링' 탭에서 측정값을 수집해 보세요."
+        sample = self.health_monitor.history[-1]
+        prefix, _, _ = raw.rpartition(" | ")
+        return f"{prefix} | {format_local_time(sample.recorded_at)}" if prefix else raw
+
+    def search_memory_summary(self, query_text: str) -> str:
+        if self.memory_archive is None:
+            return self.memory_archive_error or "가족 기억 기능을 사용할 수 없습니다."
+        filler = {
+            "가족", "기억", "추억", "보관함", "보관함에서", "저장된",
+            "찾아줘", "검색해줘", "알려줘", "검색", "찾기", "내", "에서",
+        }
+        tokens = [
+            tok for tok in re.split(r"[\s,?!.]+", query_text.strip())
+            if tok and tok not in filler
+        ]
+        keyword = " ".join(tokens)
+        try:
+            if keyword:
+                return self.memory_archive.answer_from_memories(self.profile.user_id, keyword)["text"]
+            rows = self.memory_archive.search(self.profile.user_id, "")[:3]
+        except (ArchiveError, sqlite3.Error):
+            return "가족 기억 조회 중 오류가 발생했습니다. '7단계 · 가족 기억' 탭을 확인해 주세요."
+        if not rows:
+            return "저장된 가족 기억이 없습니다. '7단계 · 가족 기억' 탭에서 기억을 추가해 보세요."
+        return "\n".join(f"{row['title']}: {row['content'][:120]}" for row in rows)
+
 
 def run_gui() -> None:
     import tkinter as tk
@@ -427,15 +480,15 @@ def run_gui() -> None:
 
     robot = Robot(JsonStore(Path(__file__).resolve().parent / "demo_data"))
     root = tk.Tk()
-    root.title("AI 컴패니언 로봇 | 4단계 구현 프로토타입")
-    root.geometry("1120x740")
-    root.minsize(1000, 640)
+    root.title("AI 컴패니언 로봇 | 통합 프로토타입")
+    root.geometry("1240x760")
+    root.minsize(1080, 660)
     root.configure(bg=BASE)
 
     style = ttk.Style(root)
     style.theme_use("clam")
     style.configure("TNotebook", background=BASE, borderwidth=0)
-    style.configure("TNotebook.Tab", background=NAVY, foreground=WHITE, font=(FONT, 11, "bold"), padding=(24, 12))
+    style.configure("TNotebook.Tab", background=NAVY, foreground=WHITE, font=(FONT, 10, "bold"), padding=(14, 10))
     style.map("TNotebook.Tab", background=[("selected", "#226390")], foreground=[("selected", WHITE)])
     style.configure("Panel.TFrame", background=PANEL)
     style.configure("TLabel", background=PANEL, foreground=WHITE, font=(FONT, 11))
@@ -465,9 +518,9 @@ def run_gui() -> None:
     tabs.add(tab4, text="4단계 · 안전/통합")
     tabs.add(tab5, text="5단계 · 스마트홈")
     health_tab = ttk.Frame(tabs, style="Panel.TFrame")
-    tabs.add(health_tab, text="건강 모니터링")
+    tabs.add(health_tab, text="6단계 · 건강 모니터링")
     memory_tab = ttk.Frame(tabs, style="Panel.TFrame")
-    tabs.add(memory_tab, text="가족 기억")
+    tabs.add(memory_tab, text="7단계 · 가족 기억")
 
     def label(parent, text, heading=False):
         return ttk.Label(parent, text=text, style="Heading.TLabel" if heading else "TLabel")
@@ -489,7 +542,7 @@ def run_gui() -> None:
     for item in robot.history[-12:]:
         conversation_view.insert("end", f"나: {item.user_message}\n로봇: {item.robot_response}\n\n")
     if not robot.history:
-        conversation_view.insert("end", "로봇: 안녕하세요! 약 복용, 실내 이동, 키오스크 이용, 상태 확인을 도와드릴 수 있어요.\n\n")
+        conversation_view.insert("end", "로봇: 안녕하세요! 약 복용, 실내 이동, 키오스크, 가스불 차단, 건강 확인, 가족 기억 검색을 도와드릴 수 있어요.\n\n")
     conversation_view.configure(state="disabled")
     chat_row = ttk.Frame(left1, style="Panel.TFrame")
     chat_row.pack(fill="x", pady=(12, 0))
@@ -506,8 +559,7 @@ def run_gui() -> None:
         conversation_view.see("end")
         conversation_view.configure(state="disabled")
         chat_input.delete(0, "end")
-        update_status()
-        refresh_alerts()
+        refresh_tabs()
 
     ttk.Button(chat_row, text="전송", command=send_chat).pack(side="left")
     ttk.Button(chat_row, text="음성 읽기",
@@ -527,14 +579,13 @@ def run_gui() -> None:
     preference.pack(anchor="w")
 
     def save_profile():
-        robot.profile.name = user_name.get().strip() or "사용자"
-        robot.profile.preferences = preference.get().strip()
-        robot.save()
+        robot.update_profile(user_name.get(), preference.get())
+        refresh_tabs()
         messagebox.showinfo("완료", "사용자 프로필을 로컬에 저장했습니다.")
 
     ttk.Button(right1, text="프로필 저장", command=save_profile).pack(anchor="w", pady=(14, 22))
     label(right1, "사용 예시", True).pack(anchor="w", pady=(0, 9))
-    label(right1, "• 안녕\n• 약 복용 알려줘\n• 화장실로 이동\n• 키오스크 사용법\n• 배터리 상태 확인\n• 넘어졌어 도와줘\n• 가스불 확인해줘\n• 가스불 꺼줘").pack(anchor="w")
+    label(right1, "• 안녕\n• 약 복용 알려줘\n• 화장실로 이동\n• 키오스크 사용법\n• 배터리 상태 확인\n• 넘어졌어 도와줘\n• 가스불 확인해줘\n• 가스불 꺼줘\n• 심박수 알려줘\n• 가족 기억 찾아줘").pack(anchor="w")
 
     # -------- 2단계 --------
     inner2 = ttk.Frame(tab2, style="Panel.TFrame")
@@ -679,7 +730,7 @@ def run_gui() -> None:
         alert_view.configure(state="normal")
         alert_view.delete("1.0", "end")
         for item in reversed(robot.alerts.records[-35:]):
-            alert_view.insert("end", f"[{item['time']}] {item['category']}\n{item['message']}\n(전달 상태: 앱 내부 시뮬레이션)\n\n")
+            alert_view.insert("end", f"[{format_local_time(item['time'])}] {item['category']}\n{item['message']}\n(전달 상태: 앱 내부 시뮬레이션)\n\n")
         if not robot.alerts.records:
             alert_view.insert("end", "아직 기록된 알림이 없습니다.")
         alert_view.configure(state="disabled")
@@ -687,11 +738,22 @@ def run_gui() -> None:
     label(inner4, "주의: 실제 낙상 감지 장치, 위치 정보, 구조기관 전송, 응급 대응 기능이 아닙니다.").pack(anchor="w", pady=(12, 0))
 
     # -------- 독립 모듈 연결 --------
-    build_smart_home_tab(tab5, robot, on_state_change=lambda: (update_status(), refresh_alerts()))
-    build_health_monitor_tab(
+    refresh_smart_home = build_smart_home_tab(
+        tab5, robot, on_state_change=lambda: (update_status(), refresh_alerts())
+    )
+    refresh_health_monitor = build_health_monitor_tab(
         health_tab, robot, on_state_change=lambda: (robot.save(), refresh_alerts(), update_status())
     )
-    build_memory_archive_tab(memory_tab, robot, on_state_change=update_status)
+    refresh_memory_archive = build_memory_archive_tab(memory_tab, robot, on_state_change=update_status)
+
+    def refresh_tabs():
+        update_status()
+        refresh_alerts()
+        refresh_smart_home()
+        refresh_health_monitor()
+        refresh_memory_archive()
+
+    tabs.bind("<<NotebookTabChanged>>", lambda _event: refresh_tabs())
 
     def scheduled_check():
         robot.check_medication()

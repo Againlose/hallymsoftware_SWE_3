@@ -1,4 +1,6 @@
-# SD — 4번 Health Monitoring (v0.1)
+# SD — 4번 Health Monitoring (v0.2)
+
+> **문서 버전**: `v0.2` (기존 `Health_Monitoring_SD_v02.pdf` 내용을 마크다운으로 통합) | **기준 규약**: [MODULE_INTEGRATION_GUIDE.md](MODULE_INTEGRATION_GUIDE.md) (`v0.2`)
 
 ## 1. 구조와 클래스 계약
 
@@ -8,13 +10,14 @@
 | `interfaces.py` | `WearableSource.read()`, `AlertSink.create(category, message)`, `DrugLookup.lookup(product)` | 구현체 교체 포트 |
 | `adapters.py` | `MockWearable`, `JsonWearable(path)`, `MockDrugLookup`, `DurLookup` | 모의 데이터, 로컬 JSON, 식약처 품목명 조회 |
 | `service.py` | `HealthMonitor(source, alerts)`, `collect()`, `status()`, `snapshot()`, `restore(data)` | 수집·이상 감지·저장·복원 |
-| `ui.py` | `build_health_monitor_tab(parent, robot, on_state_change)` | Tkinter에서 수집 요청, 저장 콜백, 최근 기록 갱신 |
+| `ui.py` | `build_health_monitor_tab(parent, robot, on_state_change)` | Tkinter 이상 징후 시연 입력(`MockWearable`), 수집 요청, KST 표시 변환, 저장 콜백, refresh 함수 반환 |
 | `__main__.py` | `python -m health_monitor` | 코어 없이 데모/독립 DUR 조회 |
 
 ## 2. 데이터 및 판정 흐름
 
 `UI/호출자 → collect() → WearableSource.read() → 검증 → 이력 추가 → 연속 이탈 검사 → AlertSink.create()`.
 `collect()`는 `Reading`을 반환하며 입력이 중복 또는 역순이면 `ValueError`를 발생시킨다. 이탈 항목이 서로 달라도 120초 이내의 연속 두 샘플이 이탈이면 같은 에피소드로 처리한다. 성공적으로 기록된 역할은 `_notified`에 보존하며 정상 샘플에서 초기화한다. 표준 코어 알림 로그 정책 `LOCAL_SIMULATION_ONLY`를 그대로 사용한다.
+**시간 표준**: 라이브러리·JSON 내부 저장 시각(`recorded_at`)은 **UTC(`+00:00`, RFC 3339 / ISO 8601)**를 유지하고, GUI(`health_monitor/ui.py`) 및 대화 응답(`Robot.get_health_status_summary()`) 표시 계층에서만 `time_utils.format_local_time()`으로 로컬 KST 변환한다.
 
 로컬 입력 JSON 예시(새 수집마다 새로운 시각 필요):
 
@@ -24,30 +27,16 @@
 
 저장 형식은 `{"health_monitor":{"history":[…],"notified":["사용자","보호자"]}}`이며 기존 코어 키는 건드리지 않는다. `history`는 오래된 순이다. 복원 시 잘못된 행은 건너뛴다.
 
-## 3. 코어 통합 가이드 — main 원본 확인 후 적용
+## 3. 코어 통합 현황 (`companion_robot.py`)
 
-`companion_robot.py`와 기존 테스트는 첨부되지 않아 이 ZIP에 코어 대체본을 넣지 않았다. 다음 코드 조각은 연동 규약에 따른 적용 지점이며, 코어의 실제 변수명에 맞춰 삽입한다.
+`companion_robot.py` 코어에 아래와 같이 통합되어 있습니다.
 
-1. `Robot.__init__`: 기존 인자 뒤에 `health_monitor: HealthMonitor | None = None` 추가. 기존 알림 서비스와 `saved` 초기화 **후** 아래를 실행한다. `alert_service`는 아래 예시의 자리표시자이며 실제 `AlertService` 인스턴스로 바꾼다.
+1. `Robot.__init__`: `health_monitor: HealthMonitor | None = None` 선택 인자 주입. 미전달 시 `create_default_monitor(self.alerts)`로 생성 후 `self.health_monitor.restore(saved.get("health_monitor"))` 호출.
+2. `Robot.save`: 저장 dict에 `"health_monitor": self.health_monitor.snapshot()` 포함.
+3. `IntentClassifier.EXAMPLES` / `Robot.generate_reply`: `"health_check"` 의도(`"건강 상태 확인해줘"`, `"심박수 알려줘"`, `"산소포화도 확인"`, `"심박수와 산소포화도 확인"`, `"내 건강 측정 결과"`)가 `Robot.get_health_status_summary()`를 호출해 KST 변환 상태 요약을 반환.
+4. `run_gui()`: `"6단계 · 건강 모니터링"` 탭에 `build_health_monitor_tab(...)` 연결(반환된 `refresh` 콜백을 탭 전환 시 호출해 상태 동기화).
 
-   ```python
-   from health_monitor import HealthMonitor, create_default_monitor
-
-   self.health_monitor = health_monitor if health_monitor is not None else create_default_monitor(alert_service)
-   self.health_monitor.restore(saved.get("health_monitor"))
-   ```
-
-2. `Robot.save`: 기존 저장 dict에 `"health_monitor": self.health_monitor.snapshot()`을 추가한다. 다른 키와 기존 저장 호출은 유지한다.
-3. `IntentClassifier.EXAMPLES` / `Robot.generate_reply`: 음성 의도는 선택 통합이다. 추가 시 `health_check` 예시 `심박수와 산소포화도 확인`을 쓰고 기존 dispatch 패턴에서 `self.health_monitor.status()`를 반환한다. 기존 인사·복약·키오스크·응급·배터리 문구 대상으로 분류 회귀 테스트를 먼저 추가한다.
-4. `run_gui()`: 기존 Notebook과 저장·갱신 콜백을 사용한다. `notebook`과 `on_state_change`는 실제 코어 변수명에 맞춘다.
-
-   ```python
-   from health_monitor.ui import build_health_monitor_tab
-
-   health_tab = ttk.Frame(notebook)
-   notebook.add(health_tab, text="건강 모니터링")
-   build_health_monitor_tab(health_tab, robot, on_state_change)
-   ```
+*(참고: GUI `MockWearable` 모드에서는 심박수·SpO₂ Spinbox와 `정상값 (75 / 98)` · `이상값 시연 (125 / 89)` 프리셋 버튼으로 연속 이상 경고를 즉시 시연할 수 있습니다.)*
 
 ## 4. DUR 외부 계약
 
@@ -75,3 +64,14 @@
 5. 실제 키가 승인된 개발 환경에서만 비식별 공개 품목명을 조회해 포털 화면과 결과를 비교한다. 실패 로그에는 요청 URL을 첨부하지 않는다.
 
 참고: [식약처 DUR 품목정보 공식 명세](https://www.data.go.kr/data/15059486/openapi.do).
+
+## 8. 상태 전이와 운영 예외
+
+| 수집 결과 | 상태 전이 | 알림 처리 |
+| :--- | :--- | :--- |
+| 유효한 기준 범위 내 샘플 | 최신 기록 갱신, 이상 구간 종료 | 역할별 중복 억제 기록 초기화 |
+| 첫 이탈 또는 이전 샘플과 간격 120초 초과 | 새 이상 구간 시작 | 첫 샘플은 알림 없음 |
+| 직전 샘플도 이탈이고 간격 120초 이하 | 연속 이탈 | 아직 기록하지 않은 역할만 로컬 기록 |
+| 파싱·유효성 검사 실패 또는 중복·역순 | 마지막 승인 기록 유지 | 새 알림 없음 |
+
+팀 코어 병합은 기존 `AlertService.create(category, message)`와 `Robot.save()`를 재사용합니다. 실제 인증키는 코드·저장 상태·Git 이력에 포함하지 않으며, `DUR_SERVICE_KEY`는 로컬 환경 변수로만 설정합니다. 키 없이도 건강 수집과 단위·통합 테스트는 가능합니다.

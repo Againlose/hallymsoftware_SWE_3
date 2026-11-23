@@ -2,11 +2,13 @@
 
 | 항목 | 내용 |
 | :--- | :--- |
-| **문서 버전** | v0.1 |
-| **작성일** | 2026-11-23 |
+| **문서 버전** | v0.2 |
+| **작성일** | 2026-11-24 |
 | **제정 권한** | 3번 개발자 (팀 리더 위임 규약) |
 | **적용 대상** | 4인 개발팀 전체 및 각 팀원이 활용하는 AI 코딩 에이전트 |
 | **목적** | 복수의 확장 모듈과 AI 에이전트가 동시 개발할 때 `companion_robot.py` 충돌·의존성 깨짐·회귀 오류를 원천 방지하기 위한 공용 계약 |
+
+> **v0.2 변경 요약**: Section 3.6 시간/타임존 표준(RFC 3339 / ISO 8601 내부 UTC · 표시 계층 KST 변환) 추가, `memory_archive` SQLite 저장소 반영, `ai_model`/`medications` 향후 확장 DI 경계 및 `ui.py` refresh 콜백 반환 규약 반영.
 
 ---
 
@@ -44,53 +46,67 @@
 `companion_robot.py`는 4개 모듈이 공통으로 만나는 유일한 진입점이므로, 아래 5개 규칙 외의 침습적 수정을 금지한다.
 
 ### 3.1 `Robot.__init__` 선택 인자 의존성 주입
-* 신규 모듈 컨트롤러/매니저는 **선택 인자(`= None`)**로 주입받는다. 기존 호출부 `Robot(store)`가 인자 없이도 정상 동작해야 한다.
+* 신규 모듈 컨트롤러/매니저 및 향후 확장 컴포넌트는 **선택 인자(`= None`)**로 주입받는다. 기존 호출부 `Robot(store)`가 인자 없이도 정상 동작해야 한다.
   ```python
   def __init__(
       self,
       store: JsonStore,
       smart_home: SmartHomeController | None = None,
-      # 타 모듈도 동일 패턴: memory_archive=None, health_monitor=None, visitor_recognition=None
+      health_monitor: HealthMonitor | None = None,
+      *,
+      memory_archive: MemoryArchive | None = None,
+      ai_model: Any | None = None,
+      medications: MedicationManager | None = None,
   ):
   ```
 * `None`이 전달된 경우 내부에서 기본 Mock/로컬 구현으로 생성하고, `saved = store.load()`에서 자기 네임스페이스 키를 읽어 상태를 복원한다.
+* 향후 **오픈웨이트(Ollama) 챗봇(`ai_model`)**이나 **복약 리마인더 고도화(`medications`)**를 교체 도입할 때도 기존 `Robot` 코어를 수정하지 않고 해당 선택 인자 DI를 통해 교체할 수 있도록 경계를 유지한다.
 
-### 3.2 `companion_state.json` 최상위 네임스페이스 키 예약표
+### 3.2 `companion_state.json` 및 SQLite 저장소 네임스페이스 규약
 * **기존 6개 코어 키 보존**: `profile`, `battery`, `status`, `history`, `medications`, `alerts`의 구조와 의미를 변경하지 않는다.
-* **확장 모듈 전용 키 예약**:
+* **모듈별 저장 위치**:
 
-| 모듈 | 예약 최상위 키 | 비고 |
+| 모듈 | 저장 방식 / 최상위 키 | 비고 |
 | :--- | :--- | :--- |
-| Family Memory Archive | `"memory_archive"` | JSON 직렬화 dict |
-| Smart Home Control | `"smart_home"` | JSON 직렬화 dict |
-| Health Monitoring | `"health_monitor"` | JSON 직렬화 dict |
-| Family & Visitor Recognition | `"visitor_recognition"` | JSON 직렬화 dict |
+| Family Memory Archive | `demo_data/memory_archive.sqlite3` (독립 SQLite) | `profile.user_id`/`name` 동기화(`register_user` upsert) |
+| Smart Home Control | `companion_state.json` 내 `"smart_home"` | JSON 직렬화 dict |
+| Health Monitoring | `companion_state.json` 내 `"health_monitor"` | JSON 직렬화 dict |
+| Family & Visitor Recognition | `companion_state.json` 내 `"visitor_recognition"` (예약) | 미구현 |
 
 * **구버전 하위 호환 필수**: `saved.get("<namespace>")`가 없거나 `None`이더라도 예외를 발생시키지 않고 안전한 기본 상태로 초기화해야 한다.
 
 ### 3.3 `IntentClassifier.EXAMPLES` 의도 이름 및 TF-IDF 충돌 방지
 * `IntentClassifier`는 문자 2~3그램 TF-IDF + 코사인 유사도를 사용한다.
 * **의도 키 접두사 규칙**: 각 모듈은 반드시 고유 접두사를 사용한다.
-  * `memory_*` (예: `memory_save`, `memory_search`)
-  * `smart_home_*` (예: `smart_home_status`, `smart_home_shutoff`)
-  * `health_*` (예: `health_check`, `health_history`)
-  * `visitor_*` (예: `visitor_register`, `visitor_list`)
-* **충돌 방지**: 기존 `"status"`(`로봇 상태 확인`, `현재 상태 확인`) 등 코어 의도와 글자 조합이 겹치지 않도록 도메인 명사(예: `가스불`, `복약`, `혈압`, `방문자`)를 예시 문장에 명시적으로 포함한다.
-* 의도를 추가한 개발자는 반드시 기존 코어 발화("안녕하세요", "약 복용 알려줘", "키오스크 사용법", "넘어졌어 도와줘", "배터리 잔량 알려줘")가 원래 의도로 분류되는지 회귀 테스트해야 한다.
+  * `memory_*` (`memory_search` 구현 완료)
+  * `smart_home_*` (`smart_home_status`, `smart_home_shutoff` 구현 완료)
+  * `health_*` (`health_check` 구현 완료)
+  * `visitor_*` (예약)
+* **충돌 방지**: 기존 `"status"`(`로봇 상태 확인`, `현재 상태 확인`) 등 코어 의도와 글자 조합이 겹치지 않도록 도메인 명사(예: `가스불`, `복약`, `심박수`, `가족 기억`, `방문자`)를 예시 문장에 명시적으로 포함한다.
+* 의도를 추가한 개발자는 반드시 기존 코어 발화가 원래 의도로 분류되는지 회귀 테스트해야 한다.
 
 ### 3.4 `AlertService.create` 카테고리 접두사 및 시뮬레이션 고지
 * 알림 로그 생성 시 아래 모듈별 카테고리 접두사를 사용한다.
   * `가족기억/...` | `스마트홈/...` | `건강/...` | `방문자/...`
 * 모든 알림은 기존 `AlertService.create(category, message)` 규격을 그대로 따르며, `"delivery": "LOCAL_SIMULATION_ONLY"` 정책(실제 119/보호자 외부 발신 없음)을 준수한다.
 
-### 3.5 `run_gui()` 탭 연결 규약
+### 3.5 `run_gui()` 탭 연결 및 갱신 규약
 * GUI 위젯 작성 코드는 `companion_robot.py`에 직접 늘리지 않고 각 모듈의 `ui.py`에 분리한다.
-* 표준 탭 빌더 시그니처:
+* 표준 탭 빌더 시그니처(탭 전환 시 상태 동기화를 위해 `refresh` 콜백 반환 권장):
   ```python
-  def build_<module>_tab(parent, robot, on_state_change) -> None:
+  def build_<module>_tab(parent, robot, on_state_change) -> Callable[[], None]:
       ...
   ```
 * `companion_robot.py`의 `run_gui()`에는 탭 프레임 생성 및 위 빌더 호출(2~3줄)만 추가한다. 기존 색상/폰트 스타일(`PANEL`, `FONT`, `"TLabel"`, `"Heading.TLabel"` 등)을 재사용해 화면 통일성을 유지한다.
+
+### 3.6 시간 및 타임존 표준 (RFC 3339 / ISO 8601)
+* **내부 저장·도메인 계층 = UTC (`+00:00`)**:
+  * 모든 저장 타임스탬프(`AlertService`, `ConversationEntry`, `GasValve`, `HealthMonitor`, `MemoryArchive`)는 **UTC ISO 8601 (`+00:00`)**으로 저장한다.
+  * 공통 헬퍼 [`time_utils.py`](../time_utils.py)의 `utc_now_iso()`, `to_utc_iso()`를 사용한다.
+* **표시(UI / 대화 응답) 계층 = 로컬 KST (`+09:00`) 변환**:
+  * Tkinter 탭, 알림 로그, 대화 요약 응답 등 사용자에게 보이는 문자열은 `time_utils.format_local_time(iso_str)`을 통해 **로컬 KST(`YYYY-MM-DD HH:MM:SS KST`)**로 변환해 표시한다.
+  * 구버전 상태 파일에 타임존 없는 naive 문자열이 남아 있어도 예외 없이 표시한다.
+* **일정 시각 비교 예외**: `MedicationManager.check_due(now)`는 사용자가 입력한 현지 24시간제 벽시계 시각(`"HH:MM"`)과의 비교이므로 로컬 `now` 기준을 유지한다.
 
 ---
 

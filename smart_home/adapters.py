@@ -1,7 +1,7 @@
 """Smart Home Control API 어댑터 구현체."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .exceptions import ApiConnectionError
@@ -10,7 +10,7 @@ from .models import ApiResponse, ValveState
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class MockSmartHomeApiClient(SmartHomeApiClient):
