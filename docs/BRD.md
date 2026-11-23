@@ -2,12 +2,13 @@
 
 | 항목 | 내용 |
 | :--- | :--- |
-| **문서 버전** | v0.3 |
-| **작성일** | 2026-11-23 |
+| **문서 버전** | v0.4 |
+| **작성일** | 2026-11-24 |
 | **작성자** | 3번 개발자 (팀 리더 · Smart Home Control / BRD / PRD 담당) |
 | **기준 문서** | `AboutThisProject.md`, `hallymsoftware_SWE_3/README.md`, `가정 돌봄로봇 모듈 확장 UML 다이어그램.png`, `MODULE_INTEGRATION_GUIDE.md` |
 | **문서 성격** | ISO/IEC/IEEE 29148의 비즈니스 요구사항 명세 체계를 참고한 실용 중심 문서 (개발 진척 및 팀 합의에 따라 지속 갱신) |
 
+> **v0.4 변경 요약**: 4인 팀 통합 프로토타입(`companion_robot.py`, `smart_home/`, `health_monitor/`, `memory_archive/`) 완료 및 UTC/KST 시간 표준 반영, 향후 확장(복약 리마인더 고도화·Ollama 챗봇·`visitor_recognition/`)의 DI 분리 원칙 명시.
 > **v0.3 변경 요약**: **복약 리마인더(Medication Reminder) 고도화** 비즈니스 요구사항(`BR-07`) 문서화 추가(3번 개발자 구현 범위 외, 타 팀원 구현 대상), `jira-readonly` MCP 읽기 전용 연동 준비 완료 반영.
 > **v0.2 변경 요약**: B2C 월 렌탈비(43,900원) 및 일상 대화용 Ollama 오픈웨이트 모델 방향 반영, Smart Home Control 범위를 가스불 차단기(가스밸브) 단일 제어로 명확화, 상업용 활용 가능 오픈소스(OSS) 패키지 허용 정책 및 팀 공통 연동 규약(`MODULE_INTEGRATION_GUIDE.md`) 반영.
 
@@ -37,9 +38,10 @@
 | **개발팀 (4인)** | 1~4번 개발자 (+ 각 AI 에이전트) | `MODULE_INTEGRATION_GUIDE.md` 기반의 낮은 결합도와 충돌 없는 병렬 개발 |
 
 ### 개발팀 역할 및 담당 범위 요약
-* **공통 코어 (구현 완료)**: 대화/의도 분류, 사용자 프로필, 복약 알림, 실내 경로 안내, 가상 낙상/거리/터치 센서, 로컬 JSON 영속화(`companion_robot.py`).
-* **3번 개발자 (본 문서 작성자)**: Smart Home Control(가스불 차단기) 구현, 연동 어댑터 구조 설계, BRD·PRD 및 팀 공통 모듈 연동 규약 작성, 팀 리딩.
-* **타 팀원 담당 확장 모듈 (공통 규약 기반 병렬 개발)**: Family Memory Archive, Health Monitoring, Family & Visitor Recognition (세부 백로그 Jira 확인 예정).
+* **공통 코어 (구현 완료)**: 대화/의도 분류, 사용자 프로필, 복약 알림, 실내 경로 안내, 가상 낙상/거리/터치 센서, 로컬 JSON 영속화(`companion_robot.py`), `time_utils.py`(UTC 내부/KST 표시).
+* **3번 개발자 (본 문서 작성자)**: Smart Home Control(가스불 차단기 `smart_home/`) 구현, 연동 어댑터 구조 설계, BRD·PRD·팀 공통 모듈 연동 규약 작성, 통합 안정화·형상관리.
+* **타 팀원 구현 완료 모듈**: Family Memory Archive (`memory_archive/`, SQLite), Health Monitoring (`health_monitor/`).
+* **향후 확장 예정 (DI 경계 확보)**: Family & Visitor Recognition (`visitor_recognition/`), 복약 리마인더 고도화(`BR-07`), 일상 대화용 오픈웨이트 Ollama 챗봇(`ai_model` DI 주입 가능).
 
 ---
 

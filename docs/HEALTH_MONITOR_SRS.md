@@ -1,4 +1,6 @@
-# SRS — 4번 Health Monitoring (v0.1)
+# SRS — 4번 Health Monitoring (v0.2)
+
+> **문서 버전**: `v0.2` (기존 `Health_Monitoring_SRS_v02.pdf` 내용을 마크다운으로 통합) | **기준 규약**: [MODULE_INTEGRATION_GUIDE.md](MODULE_INTEGRATION_GUIDE.md) (`v0.2`)
 
 ## 목적과 범위
 사용자 또는 시연자가 측정값을 수집하고 최근 상태와 이력을 확인한다. 연속된 기준 범위 이탈은 사용자·보호자 역할별 로컬 알림으로 기록한다. 본 모듈은 의료기기, 진단 또는 응급 대응 서비스가 아니다.
@@ -32,3 +34,14 @@
 - 실기기 SDK/브리지 연속 수집과 시각·센서 품질 검증, 의료 기준 검토.
 - 사용 동의, 저장 암호화·접근 제어, 보존·삭제 정책 수립. 팀 상태 파일에 실제 건강 정보를 저장하지 않는다.
 - 외부 보호자 연락은 팀의 로컬 전용 정책을 변경하는 별도 기능으로, 승인·수신 확인·감사 및 재시도 설계가 선행되어야 한다.
+
+## 요구사항–검증 추적표
+
+| 요구사항 | 코드 및 검증 수단 | 검증 상태 |
+| :--- | :--- | :--- |
+| **HM-F01** | `JsonWearable` / `collect()` · 파일 크기, 중복, 과거·미래 입력 단위 테스트 | 오프라인 검증 완료 |
+| **HM-F02** | `status()` / Tkinter 이력 목록 · 정상값·이상값 시연 UI 및 KST 변환 표시 | CLI 및 통합 UI 반영 완료 |
+| **HM-F03·F04** | `abnormal()` / `AlertSink` · 임계값 경계, 간격, 역할별 재알림 테스트 | 오프라인 및 `Robot` 통합 검증 완료 |
+| **HM-F05** | `snapshot()` / `restore()` · JSON 왕복과 누락 상태·중복 억제 확인 | 모듈 및 `Robot(store)` 재로딩 검증 완료 (`test_integration.py`) |
+| **HM-F06·N01** | `DurLookup` · 모의 응답, 키 누락, 오류 시 키 비노출 확인 | 오프라인 계약 검증 완료 (실 API 키 미검증) |
+| **HM-N02** | `python -m unittest -v` (`test_health_monitor` 10건 + `test_integration` 통합 검증) | 전체 PASS |

@@ -1,7 +1,7 @@
 """Smart Home Control 제어기 구현 (UML: 스마트홈제어기)."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .adapters import MockSmartHomeApiClient
@@ -12,7 +12,7 @@ from .models import CommandResult, DeviceStatus, ValveState
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class SmartHomeController:

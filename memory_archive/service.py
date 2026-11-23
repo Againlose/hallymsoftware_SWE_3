@@ -67,10 +67,13 @@ class MemoryArchive:
             db.close()
 
     def register_user(self, user_id, display_name):
-        """Register an identity from a trusted profile or account provider."""
+        """Register or synchronize a trusted profile display name without altering family nicknames."""
         with self._db(write=True) as db:
-            db.execute("INSERT OR IGNORE INTO app_user VALUES (?, ?)",
-                       (_required(user_id), _required(display_name)))
+            db.execute(
+                """INSERT INTO app_user (user_id, display_name) VALUES (?, ?)
+                   ON CONFLICT(user_id) DO UPDATE SET display_name = excluded.display_name""",
+                (_required(user_id), _required(display_name)),
+            )
 
     @staticmethod
     def _role(db, actor_id, family_id):
