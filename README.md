@@ -37,7 +37,7 @@ python -m unittest -v
 | [docs/MODULE_INTEGRATION_GUIDE.md](docs/MODULE_INTEGRATION_GUIDE.md) | **팀 공통 확장 모듈 연동 규약** (패키지 소유권 분리, `companion_robot.py` 최소 수정 5대 규칙, JSON 키 예약, AI 에이전트 10원칙) | **전체 팀원 · AI 에이전트 필독** |
 | [docs/SMART_HOME_DESIGN.md](docs/SMART_HOME_DESIGN.md) | Smart Home Control v1.0 상세 설계, API 계약 및 **바로 복사해 쓸 수 있는 호출 레퍼런스(Quickstart)** | 3번 모듈 연동/참조용 |
 | [docs/BRD.md](docs/BRD.md) | 비즈니스 요구사항 정의서 (`BR-01`~`BR-07`, 렌탈 모델 43,900원, Ollama 비용 절감 방향) | 전체 |
-| [docs/PRD.md](docs/PRD.md) | 제품 요구사항 정의서 (`FR-SH-01`~`09` + 타 팀원 구현용 복약 리마인더 고도화 `FR-MED-01`~`05`) | 전체 |
+| [docs/PRD.md](docs/PRD.md) | 제품 요구사항 정의서 (`FR-SH-01`~`09` + 타 팀원 구현용 복약 리마인더 고도화 `FR-MED-01`\~`05`) | 전체 |
 | [docs/AboutThisProject.md](docs/AboutThisProject.md) | 프로젝트 배경, 하드웨어/소프트웨어 콘셉트 및 저장소 문서 관리 지침 | 전체 |
 | [docs/KAN25_통합UML_검토보고_및_JIRA문구.md](docs/KAN25_통합UML_검토보고_및_JIRA문구.md) | 실제 코드베이스 기준 KAN-25 UML/요구사항 대조 및 정정 내역 | UML·JIRA 검토용 |
 | [docs/KAN25_Component_통합수정_v2.png](docs/KAN25_Component_통합수정_v2.png) | 실제 저장소 기준 Component Diagram ([.drawio 원본](docs/KAN25_Component_통합수정_v2.drawio)) | 전체 |
