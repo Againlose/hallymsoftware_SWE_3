@@ -1,6 +1,7 @@
 *main 브랜치는 force push 등의 위험한 행동으로부터 보호되고 있습니다. 반드시 자기 이름 branch에서 개발하고 merge 요청하세요.*
 
 # Version 0.2.0
+정식_릴리즈_이후_메이저_패치.마이너_패치.버그픽스_사소한_수정
 
 # AI Companion Robot
 
