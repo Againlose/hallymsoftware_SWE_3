@@ -1,4 +1,4 @@
--# main 브랜치는 force push 등의 위험한 행동으로부터 보호되고 있습니다. 반드시 자기 이름 branch에서 개발하고 merge 요청하세요.
+*main 브랜치는 force push 등의 위험한 행동으로부터 보호되고 있습니다. 반드시 자기 이름 branch에서 개발하고 merge 요청하세요.*
 
 # AI Companion Robot
 
