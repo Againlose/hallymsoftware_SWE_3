@@ -20,6 +20,8 @@ import re
 import threading
 from typing import Any
 
+from memory_archive import MemoryArchive
+
 from smart_home import (
     CommandResult,
     SmartHomeController,
@@ -257,12 +259,20 @@ class MedicationManager:
 
 
 class Robot:
-    def __init__(self, store: JsonStore, smart_home: SmartHomeController | None = None):
+    def __init__(
+        self, store: JsonStore, smart_home: SmartHomeController | None = None,
+        memory_archive: MemoryArchive | None = None,
+    ):
         self.store = store
         saved = store.load()
         profile_saved = saved.get("profile", {})
         self.profile = UserProfile(**{k: profile_saved.get(k, getattr(UserProfile(), k))
                                       for k in UserProfile.__dataclass_fields__})
+        self.memory_archive = (
+            memory_archive if memory_archive is not None
+            else MemoryArchive(store.data_dir / "memory_archive.sqlite3")
+        )
+        self.memory_archive.register_user(self.profile.user_id, self.profile.name)
         self.robot_id = "R001"
         self.battery = max(0, min(100, int(saved.get("battery", 85))))
         self.status = saved.get("status", "정상")
@@ -387,6 +397,7 @@ class Robot:
 def run_gui() -> None:
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
+    from memory_archive.ui import build_memory_archive_tab
 
     BASE = "#0B1524"
     PANEL = "#11253B"
@@ -431,6 +442,8 @@ def run_gui() -> None:
     tabs.add(tab3, text="3단계 · 실내 이동")
     tabs.add(tab4, text="4단계 · 안전/통합")
     tabs.add(tab5, text="5단계 · 스마트홈")
+    memory_tab = ttk.Frame(tabs, style="Panel.TFrame")
+    tabs.add(memory_tab, text="가족 기억")
 
     def label(parent, text, heading=False):
         return ttk.Label(parent, text=text, style="Heading.TLabel" if heading else "TLabel")
@@ -651,6 +664,7 @@ def run_gui() -> None:
 
     # -------- 5단계 (독립 모듈 연결) --------
     build_smart_home_tab(tab5, robot, on_state_change=lambda: (update_status(), refresh_alerts()))
+    build_memory_archive_tab(memory_tab, robot, on_state_change=update_status)
 
     def scheduled_check():
         robot.check_medication()
