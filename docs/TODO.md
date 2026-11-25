@@ -44,7 +44,7 @@
 - [x] **[P1] 창 제목 · docstring · 탭 명칭 통일(`1~7단계`) 및 창 크기 조정** (`1240x760`, 탭 패딩 `(14, 10)`)
 - [x] **[P2] `health_monitor` (`tk.Listbox`) / `memory_archive` (`ScrolledText`) 테마(`#EAF4FB`, `#15283C`, `맑은 고딕`) 통일**
 - [x] **[P2] 1단계 대화 탭 초기 안내문 및 `사용 예시` 현행화**
-- [ ] **[P2 · 수동 확인] Tkinter GUI 실창(`python companion_robot.py`) 7개 탭 전환 및 시각 레이아웃 최종 수동 점검**
+- [X] **[P2 · 수동 확인] Tkinter GUI 실창(`python companion_robot.py`) 7개 탭 전환 및 시각 레이아웃 최종 수동 점검**
 
 ---
 
